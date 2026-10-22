@@ -7,7 +7,7 @@
 - `ARCHITECTURE.md`: stack rationale, threading/hook model, `ToUnicodeEx` mapping with extended-scan reconstruction and no-state-change flag, profile format + scoring, alert channels, fix pipeline, selection/clipboard, immunity, tray/mutex/config, autostart + UIPI plan, installer pipeline, security model, roadmap M1..M12.
 - Owner-approved decisions applied: MIT license, `{autopf}` Inno constant fixed, LED blink redesigned (Scroll Lock default + register-safety guard, Caps opt-in with gap-only blinking).
 - `AGENTS.md`: invariants + session protocol (one step per session, no AI in commits, no push without approval).
-- `HANDOFF.md`: Session #001 + #002 entries. Git repo initialized, docs committed.
+- `HANDOFF.md`: Session #001 + #002 entries. Git repo initialized, root commit `128d0aa` (docs only; author "VKV Studio <dev@vkvstudio.com>" via `-c`, repo-local git config not set). No push. `.gitignore` comes with M1 skeleton.
 
 ## Verified
 - Docs exist and are readable at `C:\projects\SmartPunto`. WinAPI constraints (`ToUnicodeEx` state mutation, `0xE0` scan reconstruction, `MAPVK_VK_TO_VSC_EX`, Inno per-user HKCU uninstall) checked against Microsoft/jrsoftware docs. Architecture reviewed and approved by owner.
