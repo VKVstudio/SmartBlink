@@ -10,10 +10,10 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
-    DispatchMessageW, GetCursorPos, GetMessageW, GetSystemMetrics, HICON, IDI_APPLICATION,
-    IMAGE_ICON, LoadIconW, LoadImageW, LR_DEFAULTCOLOR, MF_STRING, MSG, PostMessageW,
-    PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SetForegroundWindow, ShowWindow,
-    SM_CXSMICON, SM_CYSMICON, SW_HIDE, TrackPopupMenu, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    DispatchMessageW, FindWindowW, GetCursorPos, GetMessageW, GetSystemMetrics, HICON,
+    IDI_APPLICATION, IMAGE_ICON, LoadIconW, LoadImageW, LR_DEFAULTCOLOR, MF_STRING, MSG,
+    PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SetForegroundWindow,
+    ShowWindow, SM_CXSMICON, SM_CYSMICON, SW_HIDE, TrackPopupMenu, TPM_RETURNCMD, TPM_RIGHTBUTTON,
     TranslateMessage, WNDCLASSW, WM_APP, WM_DESTROY, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP,
 };
 
@@ -107,7 +107,15 @@ unsafe fn add_tray_icon(hwnd: HWND, hmod: HMODULE) -> windows::core::Result<()> 
     };
     copy_wtext(&utf16_units("SmartBlink"), &mut nid.szTip);
     if !Shell_NotifyIconW(NIM_ADD, &nid).as_bool() {
-        return Err(windows::core::Error::from_win32());
+        // If Shell_TrayWnd exists on this desktop, NIM_ADD genuinely failed.
+        // If Shell_TrayWnd is not present yet (e.g. early logon before Explorer creates
+        // the taskbar, or a headless runner desktop), keep running and let the
+        // TaskbarCreated broadcast in wnd_proc register the icon once Explorer is ready.
+        if let Ok(tray_hwnd) = FindWindowW(w!("Shell_TrayWnd"), None) {
+            if !tray_hwnd.0.is_null() {
+                return Err(windows::core::Error::from_win32());
+            }
+        }
     }
     Ok(())
 }
@@ -195,3 +203,29 @@ unsafe fn show_menu(hwnd: HWND) {
         let _ = DestroyWindow(hwnd);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedded_icon_resource_loads() {
+        unsafe {
+            let hmod = GetModuleHandleW(None).expect("GetModuleHandleW");
+            let hinst = HINSTANCE(hmod.0 as _);
+            let cx = GetSystemMetrics(SM_CXSMICON);
+            let cy = GetSystemMetrics(SM_CYSMICON);
+            let h = LoadImageW(
+                hinst,
+                PCWSTR(IDI_MAIN as *const u16),
+                IMAGE_ICON,
+                cx,
+                cy,
+                LR_DEFAULTCOLOR,
+            )
+            .expect("LoadImageW for IDI_MAIN (101) must succeed");
+            assert!(!h.is_invalid());
+        }
+    }
+}
+

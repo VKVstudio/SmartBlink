@@ -71,3 +71,23 @@ Read `AGENTS.md`, `.system/checkpoint.md`. One task: repoint linker to LLVM-MinG
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`, then execute `.system/next_task.md` in order.
+
+## Session #005 — 2026-10-23 — M1 execution (SmartBlink)
+
+**Done**
+- Executed `.system/next_task.md` steps 1–8 in order:
+  1. Installed and set default `stable-x86_64-pc-windows-gnullvm` (1.99.1). Configured machine-specific linker (`x86_64-w64-mingw32-clang.exe`) and `SMARTBLINK_WINDRES` in `C:\Users\user\.cargo\config.toml`; cleaned repo `.cargo/config.toml`.
+  2. Renamed product/crate/binary/AppData dir/mutex/window class to `SmartBlink` / `smartblink`.
+  3. Added `assets/app.manifest` (`asInvoker`, Win10/11 compatibility, PerMonitorV2 DPI), updated `assets/version.rc`, added `build.rs` invoking `windres`. Fixed a frame-offset calculation bug in `tools/gen_icon.py` (`6 + 16 * len(frames) + len(body)` instead of `6 + len(entries) + len(body)`) and regenerated `assets/icon.ico` so `LoadImageW` loads `IDI_MAIN=101` directly.
+  4. Rewrote `src/main.rs` (mutex before config load) and `src/tray.rs` (`GetMessageW` loop with `.0 > 0`, `DestroyWindow` -> `WM_DESTROY` -> `remove_tray_icon` + `PostQuitMessage(0)`, `WM_NULL` post after `TrackPopupMenu`, `TaskbarCreated` handler, non-Explorer desktop/early-logon guard on `NIM_ADD`).
+  5. Updated `src/config.rs` defaults, char-by-char array parser with escape support, `sync_all()` before rename, and exact-value unit tests.
+  6. Synced `ARCHITECTURE.md` and `AGENTS.md` with `gnullvm` + `build.rs`/`windres` + `Local\SmartBlink.SingleInstance`.
+
+**Verified**
+- `cargo build --release` → 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe` built, `VersionInfo.ProductName == "SmartBlink"`.
+- `cargo test --release` → `test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s`.
+- Step 7 automated script → `first alive: True`, `second exited: True`, `config exists: True` (`%APPDATA%\SmartBlink\config.toml`).
+- Pending: owner manual tray check on interactive desktop (icon, tooltip, Exit, Explorer restart).
+
+**Next agent**
+Once owner confirms manual tray check, replace `.system/next_task.md` with `# NEXT TASK\nSee checkpoint.md` and proceed to M2 (`ARCHITECTURE.md` §2, §3.7, §6).

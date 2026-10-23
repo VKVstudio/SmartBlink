@@ -1,30 +1,33 @@
-# Checkpoint — SmartPunto
+# Checkpoint — SmartBlink
 
-`Current Phase`: M1 in progress (code written, compile clean, link blocked by toolchain). Owner stopped session 2026-10-23 ~21:59 for context preservation.
-`Approved Stack`: Rust (`x86_64-pc-windows-gnu` — GNU toolchain mandated by owner 2026-10-23, MSVC/Windows SDK forbidden), `windows` crate 0.58, Win32 tray + Settings window, TOML config in `%APPDATA%\SmartPunto`, WASAPI shared audio, Inno Setup 6 installer (per-user default `{autopf}`, optional elevated ONLOGON scheduled task). License MIT. Publisher `VKV Studio` / vkvstudio.com. Min OS: Windows 10 1809. Default fix hotkey: double Left Shift. Default alert mode: Both (audio + LED), LED defaults to Scroll Lock.
+`Current Phase`: M1 code complete, automated verification passed, owner manual tray check pending.
+`Approved Stack`: Rust (`x86_64-pc-windows-gnullvm` via LLVM-MinGW UCRT; MSVC/Windows SDK forbidden), `windows` crate 0.58, Win32 tray + Settings window, hand-rolled flat TOML config in `%APPDATA%\SmartBlink\config.toml`, WASAPI shared audio, Inno Setup 6 installer (per-user default `{autopf}`, optional elevated ONLOGON scheduled task). License MIT. Publisher `VKV Studio` / vkvstudio.com. Min OS: Windows 10 1809. Default fix hotkey: double Left Shift. Default alert mode: Both (audio + LED), LED defaults to Scroll Lock.
 
 ## Completed
-- Phase 0 docs: `ARCHITECTURE.md`, `AGENTS.md`, owner decisions (MIT, `{autopf}`, Scroll-Lock LED default). Git root commit `128d0aa` (docs only) + checkpoint commit `4ff2ce3`. No push.
-- M1 code written (uncommitted): `Cargo.toml` (windows 0.58 features incl. `Win32_Graphics_Gdi`, `Win32_Security`; release profile opt-level=s/lto/strip/panic=abort), `.cargo/config.toml` (target gnu + linker override), `src/main.rs`, `src/config.rs` (hand-rolled TOML subset codec + atomic save, 4 unit tests), `src/single_instance.rs` (named mutex), `src/tray.rs` (rewritten against windows 0.58 API: NOTIFYICONDATAW, TrackPopupMenu, LoadImageW), `assets/icon.ico` + `version.rc`, `tools/gen_icon.py`, `.gitignore`.
+- Phase 0 docs + rename to **SmartBlink** (`ARCHITECTURE.md`, `AGENTS.md`). Repo folder stays `C:\projects\SmartPunto`.
+- Toolchain switched to `stable-x86_64-pc-windows-gnullvm` (rustc 1.99.1). User-level `C:\Users\user\.cargo\config.toml` holds LLVM-MinGW `x86_64-w64-mingw32-clang.exe` linker and `SMARTBLINK_WINDRES` (`x86_64-w64-mingw32-windres.exe`); repo `.cargo/config.toml` has only `target = "x86_64-pc-windows-gnullvm"`.
+- M1 implementation complete:
+  - `build.rs` + `assets/version.rc` + `assets/app.manifest` (`asInvoker`, PerMonitorV2 DPI) + `assets/icon.ico` (fixed `.ico` directory offset bug in `tools/gen_icon.py` and regenerated).
+  - `src/main.rs`: acquires `Local\SmartBlink.SingleInstance` mutex BEFORE `config::load_or_create()`, then runs `tray::run()`.
+  - `src/tray.rs`: blocking `GetMessageW` loop (`.0 > 0`), `DestroyWindow` -> `WM_DESTROY` -> `remove_tray_icon` + `PostQuitMessage(0)`, `PostMessageW(WM_NULL)` after `TrackPopupMenu`, `TaskbarCreated` re-registration via `RegisterWindowMessageW`, system small-icon metrics (`SM_CXSMICON`/`SM_CYSMICON`), graceful startup when `Shell_TrayWnd` is not yet present.
+  - `src/config.rs`: lowercase process image names without `.exe` (`windowsterminal`, `cmd`, `powershell`, `pwsh`, `conhost`, `code`, `devenv`), char-by-char string array parser with `\"` and `\\` escape handling, `File::sync_all()` before atomic rename.
 
 ## Verified
-- Compile of crate `smartpunto` succeeds on gnu target — only warnings remain (5 unused-Result/BOOL in tray.rs: ShowWindow, Shell_NotifyIconW results unwrapped).
-- Toolchain present: rustup 1.99.1, default toolchain switched to `stable-x86_64-pc-windows-gnu`. rustc/cargo NOT on PATH by default — every command needs `$env:Path = "C:\Users\user\.cargo\bin;" + $env:Path` (fnm "Node selection failed" noise is harmless).
-- NOT verified: final link never succeeded → no exe produced, no manual tray test, unit tests never run. Work is NOT production-complete.
+- `cargo build --release`: 0 warnings, produces `target\x86_64-pc-windows-gnullvm\release\smartblink.exe`.
+- `(Get-Item target\x86_64-pc-windows-gnullvm\release\smartblink.exe).VersionInfo.ProductName` == `SmartBlink`.
+- `cargo test --release`: `test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out` (5 config tests + 1 embedded icon resource test `IDI_MAIN=101`).
+- Automated runtime verification script (Step 7):
+  - `first alive: True`
+  - `second exited: True`
+  - `config exists: True` at `%APPDATA%\SmartBlink\config.toml` with expected default contents.
+- Pending owner manual check on interactive desktop: tray icon + tooltip `"SmartBlink"`, right-click -> `Exit` closes process and removes icon, Explorer restart restores icon.
 
 ## Next Immediate Task
-**Execute `.system/next_task.md` step by step** (M1 finish + rename to SmartBlink). It is self-contained: toolchain fix, rename, resources, bug list, verification script, stop rules.
-Key correction vs earlier plan: LLVM-MinGW has no libgcc/libgcc_eh → `windows-gnu` target can't link with it; use `x86_64-pc-windows-gnullvm` toolchain.
-
-## Owner decisions 2026-10-23 (review session)
-- Product renamed **SmartBlink** (keep "Smart" prefix = owner's brand series; trademark distance from "Punto Switcher"). Repo folder stays `C:\projects\SmartPunto`.
-- Reviewer model writes specs only; implementation by a cheaper executor model.
-- M1 code review findings (all in next_task.md): PeekMessage loop exits instantly, Exit not wired, icon/manifest not embedded, config loaded before mutex, weak blacklist parser/tests, version.rc line 1 garbage.
+After owner confirms M1 manual tray check:
+M2 — Keyboard/mouse hooks (`WH_KEYBOARD_LL`, `WH_MOUSE_LL`), lock-free SPSC ring buffer (RAM only, zeroed on reset), foreground window/process immunity check, tray Pause/Resume toggle (see `ARCHITECTURE.md` §2, §3.7, §6).
 
 ## Blockers
-- MSYS2 mingw64 gcc is broken on this machine: `cc1.exe` missing (`C:\msys64\mingw64\libexec\gcc\x86_64-w64-mingw32` empty) → every link (incl. build scripts proc-macro2/quote/windows_x86_64_gnu) dies with `collect2.exe: error: ld returned 53 exit status`.
-- MSVC path dead and forbidden by owner: BuildTools exists but no Windows SDK (`kernel32.lib` absent, winget SDK installs fail w/ 0x800706C3). Do not retry.
-- `iscc` (Inno Setup) presence unverified this session; needed only at installer milestone, not M1.
+- None for M1/M2. (`iscc` for Inno Setup 6 needed only at M10.)
 
 ## Junk in repo root (list only, not deleted per rules)
-- `scratch_build_m1.log`, `scratch_sdk_install.log`, `scratch/` dir — build/sdk logs from this session. Do not commit.
+- `scratch_build_m1.log`, `scratch_sdk_install.log`, `scratch/` dir, `assets/icon_16.png`..`icon_48.png` — untracked, not committed.

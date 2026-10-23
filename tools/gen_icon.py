@@ -87,7 +87,7 @@ def ico_bytes(frames: list[tuple[int, bytes]]) -> bytes:
     body = b""
     for size, png in frames:
         w = size if size < 256 else 0
-        entries += struct.pack("<BBBBHHII", w, w, 0, 0, 1, 32, len(png), 6 + len(entries) + len(body))
+        entries += struct.pack("<BBBBHHII", w, w, 0, 0, 1, 32, len(png), 6 + 16 * len(frames) + len(body))
         body += png
     return hdr + entries + body
 
