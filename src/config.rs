@@ -5,7 +5,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-pub const APP_DIR_NAME: &str = "SmartPunto";
+pub const APP_DIR_NAME: &str = "SmartBlink";
 pub const CONFIG_FILE_NAME: &str = "config.toml";
 
 /// Alert channel selection. Mirrors ARCHITECTURE.md §3.4/§3.5 config keys.
@@ -137,7 +137,7 @@ pub fn config_path() -> PathBuf {
 /// Serialize to the flat TOML subset we own (stable key order, LF endings).
 pub fn to_toml(cfg: &Config) -> String {
     let mut out = String::new();
-    out.push_str("# SmartPunto config. No typed text is ever stored here.\n");
+    out.push_str("# SmartBlink config. No typed text is ever stored here.\n");
     out.push_str(&format!("notify_mode = \"{}\"\n", cfg.notify_mode.as_str()));
     out.push_str(&format!("led_mode = \"{}\"\n", cfg.led_mode.as_str()));
     out.push_str(&format!("fix_trigger = \"{}\"\n", cfg.fix_trigger.as_str()));

@@ -1,4 +1,4 @@
-//! SmartPunto — wrong-layout typing detection and one-gesture fix.
+//! SmartBlink — wrong-layout typing detection and one-gesture fix.
 //! M1: single instance, tray icon, config read/write. No hooks yet (M2+).
 
 #![windows_subsystem = "windows"]

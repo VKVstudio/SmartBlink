@@ -1,4 +1,6 @@
-# SmartPunto Architecture
+# SmartBlink Architecture
+
+> Renamed from SmartPunto on 2026-10-23 (trademark distance from "Punto Switcher").
 
 Product: Windows tray utility that detects text typed in the wrong keyboard layout (user looks at keyboard, not screen), signals via Caps/Scroll LED blink + muted low-frequency click, and fixes only on explicit user gesture.
 
@@ -11,10 +13,10 @@ Status: Phase 0 design. No application code yet. This file is the single source 
 | Language | **Rust** (edition 2021), MSVC target `x86_64-pc-windows-msvc`, CRT static | Native `.exe`, no .NET/JVM runtime, release binary ~1–3 MB, RSS target <5 MB. Safe concurrency for hook thread ↔ worker thread. |
 | WinAPI | `windows` crate (official Microsoft), features limited to what we use | No hand-written bindings drift; direct `WH_KEYBOARD_LL`, `Shell_NotifyIconW`, `ToUnicodeEx`. |
 | UI | Pure Win32: tray (`Shell_NotifyIconW`) + one Settings window created with `CreateWindowExW` (no GUI framework) | Zero dependencies, small footprint. Hotkey dialog is a single dialog template in a `.rc`. |
-| Config | TOML via `toml` crate at `%APPDATA%\SmartPunto\config.toml` | Human-editable, atomic rewrite. |
+| Config | TOML via `toml` crate at `%APPDATA%\SmartBlink\config.toml` | Human-editable, atomic rewrite. |
 | Audio | WASAPI shared-mode render client + in-memory PCM (16-bit mono 48 kHz, ~30 ms precomputed ring) | No `PlaySound` file I/O, no mixer latency surprises. Fallback: `waveOut` if WASAPI init fails. |
 | Installer | **Inno Setup 6**, `PrivilegesRequired=lowest` (per-user default), optional admin override dialog | Smallest proven installer, native uninstall registration, `/SILENT` for CI. WiX rejected: heavier MSI toolchain; NSIS rejected: weaker uninstall registry defaults. |
-| Build | `cargo` + `rc.exe`/`link.exe`; GitHub Actions `windows-latest` runner produces `SmartPunto-Setup.exe` artifact | Reproducible release pipeline. |
+| Build | `cargo` + `rc.exe`/`link.exe`; GitHub Actions `windows-latest` runner produces `SmartBlink-Setup.exe` artifact | Reproducible release pipeline. |
 
 Rejected: C++ (build fragility, memory-safety risk in a global hook), C# NativeAOT (still larger image + WinRT projections churn), AutoHotkey/Electron (banned by size/runtime constraints).
 
@@ -105,12 +107,12 @@ Hotkey (default `Ctrl+Alt+Z`, configurable) converts the selected text in the fo
 - "Stubborn user": if a signal is raised and the user continues typing then presses `Space`/`Enter`, the signal fades and that word+layout pair enters a session whitelist (RAM only) so it never alerts again this session.
 
 ### 3.8 Tray, single instance, config
-- Mutex `Global\SmartPunto.Mutex` + a hidden message-only window; second instance sends `WM_USER+1` to the first and exits. On Windows without session-wide `Global\` rights (non-admin), fall back to `Session\...` namespaced mutex.
+- Mutex `Global\SmartBlink.Mutex` + a hidden message-only window; second instance sends `WM_USER+1` to the first and exits. On Windows without session-wide `Global\` rights (non-admin), fall back to `Session\...` namespaced mutex.
 - Tray: `Shell_NotifyIconW` with icon states Active / Paused / Immune; callback menu built lazily: Enable/Pause, Alert mode submenu, Fix hotkey submenu, "Run at Windows start" checkbox, Exclusions ("add current window/process"), Settings, About, Exit. Icon double-click opens Settings.
-- Config: `%APPDATA%\SmartPunto\config.toml`, written via temp-file + `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING)` for atomicity; defaults created on first run; schema documented in `docs/CONFIG.md`.
+- Config: `%APPDATA%\SmartBlink\config.toml`, written via temp-file + `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING)` for atomicity; defaults created on first run; schema documented in `docs/CONFIG.md`.
 
 ### 3.9 Autostart & UIPI (admin windows)
-- Default: registry `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value `SmartPunto` = exe path. Runs non-elevated, invisible to other users.
+- Default: registry `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` value `SmartBlink` = exe path. Runs non-elevated, invisible to other users.
 - Optional "work above elevated windows": installer/Settings offer a Task Scheduler registration (`ONLOGON`, principal = current user, `RunLevel Highest`). Pre-approving the task at logon means no UAC prompt per boot; creating it requires one elevation (or admin) once, and we do it only on explicit user action. UIPI note: a non-elevated LL hook cannot inject into an elevated window's input queue — the elevated task is the supported answer, and Settings shows a clear "not running elevated" state when it matters.
 - Manifest: `asInvoker` (no `requireAdministrator`) so the app never prompts; optional elevation comes from the scheduled task only.
 
@@ -122,7 +124,7 @@ Repo layout:
 src/            core engine, hooks, tray, audio, fix
 assets/         icon.ico, profiles/*.bin, manifest.rc, version.rc
 tools/profilegen/
-installer/SmartPunto.iss
+installer/SmartBlink.iss
 .github/workflows/release.yml
 docs/           CONFIG.md, PRIVACY.md, BUILDING.md
 README.md (EN)  README.ru.md (RU)
@@ -130,13 +132,13 @@ README.md (EN)  README.ru.md (RU)
 ```
 
 Installer (`PrivilegesRequired=lowest`, `PrivilegesRequiredOverridesAllowed=dialog`):
-- Default dir `{autopf}\SmartPunto` — resolves to `%LOCALAPPDATA%\Programs\SmartPunto` in per-user mode and `{commonpf}` (`%PROGRAMWFILES%`) in elevated mode; user may override the path.
+- Default dir `{autopf}\SmartBlink` — resolves to `%LOCALAPPDATA%\Programs\SmartBlink` in per-user mode and `{commonpf}` (`%PROGRAMWFILES%`) in elevated mode; user may override the path.
 - `[Tasks]` checkbox "Run at Windows startup" (registry Run value) + optional elevated-task task, both off-by-default-with-recommendation-on.
-- Start-menu shortcut to exe; uninstall registration handled natively by Inno (HKCU for per-user, HKLM for admin mode), `DisplayIcon={app}\SmartPunto.exe`.
-- Uninstall: `[Code]` kills the running process (`FindWindow`/mutex handshake → graceful `WM_CLOSE` on message window, then `taskkill /F` fallback), deletes Run value and scheduled task, removes files. `%APPDATA%\SmartPunto` config kept unless user ticks "remove settings".
+- Start-menu shortcut to exe; uninstall registration handled natively by Inno (HKCU for per-user, HKLM for admin mode), `DisplayIcon={app}\SmartBlink.exe`.
+- Uninstall: `[Code]` kills the running process (`FindWindow`/mutex handshake → graceful `WM_CLOSE` on message window, then `taskkill /F` fallback), deletes Run value and scheduled task, removes files. `%APPDATA%\SmartBlink` config kept unless user ticks "remove settings".
 - Update path: same AppId; setup detects old version via registry `DisplayVersion`, closes app, replaces binaries, re-registers autostart. No service, no driver.
 
-Release workflow (`windows-latest`): `cargo build --release` → `rc.exe` resources → Inno `/SILENT /Output=SmartPunto-Setup-x.y.z.exe` → upload artifact; signed builds only if user provides a cert (see open questions).
+Release workflow (`windows-latest`): `cargo build --release` → `rc.exe` resources → Inno `/SILENT /Output=SmartBlink-Setup-x.y.z.exe` → upload artifact; signed builds only if user provides a cert (see open questions).
 
 ## 5. Security & Privacy by Design
 - Keystrokes never written to disk or network. Ring buffer in RAM, capped, zeroed on reset/exit. No logs of typed content; diagnostics log only counters and process names.
@@ -157,7 +159,7 @@ Release workflow (`windows-latest`): `cargo build --release` → `rc.exe` resour
 | M7 | Remaining 18 profiles + intra-Latin conflict tuning | Conflict suite (DE/FR/US/UK/TR/PL) |
 | M8 | Selection conversion + clipboard save/restore; stubborn-user whitelist | Clipboard round-trip test with rich formats |
 | M9 | Settings window UI, tray menu complete, autostart registry + elevated task opt-in | Toggle survives reboot |
-| M10 | `installer/SmartPunto.iss`, uninstall cleanliness | Silent install/uninstall on clean VM |
+| M10 | `installer/SmartBlink.iss`, uninstall cleanliness | Silent install/uninstall on clean VM |
 | M11 | GitHub Actions release workflow, checksums, README EN/RU, LICENSE, CONTRIBUTING | Artifact builds green |
 | M12 | Public release: version 1.0.0 tag, release notes, screenshots, privacy page | Human review before push (explicit approval required) |
 

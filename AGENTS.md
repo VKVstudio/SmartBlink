@@ -1,4 +1,4 @@
-# AGENTS.md — SmartPunto
+# AGENTS.md — SmartBlink
 
 Windows tray utility for wrong-layout typing detection and one-gesture fix. Users look at the keyboard, not the screen: alerts are LED blink + muted click; correction happens only on explicit user gesture.
 
@@ -16,7 +16,7 @@ Read `ARCHITECTURE.md` before any code decision. This file is process rules only
 9. **Clipboard preserved byte-for-byte** on selection conversion, all formats, restore even on error paths.
 10. **No dependencies with big runtimes.** No Electron, no .NET runtime, no Python, no AHK. Rust + `windows` crate only; new crates require a note in `ARCHITECTURE.md`.
 11. **Manifest stays `asInvoker`.** Elevation only via an opt-in scheduled task created on explicit user action.
-12. Config lives in `%APPDATA%\SmartPunto\config.toml`, atomic rewrite, no secrets, no typed text.
+12. Config lives in `%APPDATA%\SmartBlink\config.toml`, atomic rewrite, no secrets, no typed text.
 
 ## Session Protocol
 1. On start: read `AGENTS.md`, `.system/checkpoint.md`, last entries of `HANDOFF.md`. Read `ARCHITECTURE.md` sections relevant to the task.
@@ -32,7 +32,7 @@ Read `ARCHITECTURE.md` before any code decision. This file is process rules only
 ## Build commands
 - Rust toolchain: MSVC target, `cargo build --release` (see `.system/checkpoint.md` for the confirmed local toolchain path if rustc is not on PATH).
 - Resources: `rc.exe assets/version.rc` before linking when version info changes.
-- Installer: `iscc installer/SmartPunto.iss` (Inno Setup 6).
+- Installer: `iscc installer/SmartBlink.iss` (Inno Setup 6).
 
 ## Definition of done per milestone
 Compiles in release, unit tests green for the touched module, manual behavior verified on the host, checkpoint + handoff updated, commit created.

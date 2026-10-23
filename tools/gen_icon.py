@@ -1,4 +1,4 @@
-"""Generate SmartPunto icon assets (icon.ico with 16/24/32/48 px PNG-compressed frames).
+"""Generate SmartBlink icon assets (icon.ico with 16/24/32/48 px PNG-compressed frames).
 
 Design: dark rounded square, white keyboard keycap, orange "shift" arrow glyph.
 Pure stdlib (struct + zlib via a minimal deflate using stored blocks is complex;

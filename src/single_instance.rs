@@ -18,7 +18,7 @@ impl Drop for SingleInstance {
 
 /// Returns Some(guard) when this process is the first instance; None otherwise.
 pub fn acquire() -> Option<SingleInstance> {
-    let name = w!("Local\\SmartPunto.SingleInstance.Mutex");
+    let name = w!("Local\\SmartBlink.SingleInstance");
     // SAFETY: plain Win32 call, no aliasing; handle owned by guard.
     let handle = unsafe { CreateMutexW(None, false, name) };
     match handle {

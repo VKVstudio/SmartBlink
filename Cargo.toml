@@ -1,5 +1,5 @@
 [package]
-name = "smartpunto"
+name = "smartblink"
 version = "0.1.0"
 description = "Wrong-layout typing detection and one-gesture fix for Windows"
 license = "MIT"
@@ -7,7 +7,7 @@ edition = "2021"
 rust-version = "1.75"
 
 [[bin]]
-name = "smartpunto"
+name = "smartblink"
 path = "src/main.rs"
 
 [dependencies]

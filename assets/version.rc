@@ -1,5 +1,5 @@
 Microsoft (R) COFF resource compiler example script
-; SmartPunto application icon + version info.
+; SmartBlink application icon + version info.
 ; Build: rc.exe /fo assets\version.res assets\version.rc
 #include <windows.h>
 
@@ -23,12 +23,12 @@ BEGIN
         BLOCK "00000409"
         BEGIN
             VALUE "CompanyName", "VKV Studio"
-            VALUE "FileDescription", "SmartPunto - wrong-layout typing detection and one-gesture fix"
+            VALUE "FileDescription", "SmartBlink - wrong-layout typing detection and one-gesture fix"
             VALUE "FileVersion", "0.1.0.0"
-            VALUE "InternalName", "smartpunto"
+            VALUE "InternalName", "smartblink"
             VALUE "LegalCopyright", "MIT License - Copyright (c) 2026 VKV Studio"
-            VALUE "OriginalFilename", "smartpunto.exe"
-            VALUE "ProductName", "SmartPunto"
+            VALUE "OriginalFilename", "smartblink.exe"
+            VALUE "ProductName", "SmartBlink"
             VALUE "ProductVersion", "0.1.0.0"
         END
     END

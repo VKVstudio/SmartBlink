@@ -26,7 +26,7 @@ const IDI_MAIN: usize = 101; // MAKEINTRESOURCE(101): low word set, high word ze
 pub fn run(_cfg: &Config) -> windows::core::Result<()> {
     unsafe {
         let hmod = GetModuleHandleW(None)?;
-        let cls = w!("SmartPuntoTrayWnd");
+        let cls = w!("SmartBlinkTrayWnd");
         let wc = WNDCLASSW {
             lpfnWndProc: Some(wnd_proc),
             hInstance: HINSTANCE(hmod.0 as _),
@@ -40,7 +40,7 @@ pub fn run(_cfg: &Config) -> windows::core::Result<()> {
         let hwnd = CreateWindowExW(
             Default::default(),
             cls,
-            w!("SmartPunto"),
+            w!("SmartBlink"),
             Default::default(),
             0,
             0,
@@ -97,7 +97,7 @@ unsafe fn add_tray_icon(hwnd: HWND, hmod: windows::Win32::Foundation::HMODULE) {
         hIcon: hicon,
         ..Default::default()
     };
-    copy_wtext(&utf16_units("SmartPunto"), &mut nid.szTip);
+    copy_wtext(&utf16_units("SmartBlink"), &mut nid.szTip);
     Shell_NotifyIconW(NIM_ADD, &nid);
 }
 
