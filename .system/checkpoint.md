@@ -13,10 +13,13 @@
 - NOT verified: final link never succeeded → no exe produced, no manual tray test, unit tests never run. Work is NOT production-complete.
 
 ## Next Immediate Task
-M1 finish: fix linking, then `cargo build --release` + `cargo test --release config::tests`, manual tray smoke test (icon/tooltip/Exit, second instance silent), fix 5 warnings, commit.
-First link attempt (untried): repoint `.cargo/config.toml` linker from broken MSYS2 gcc to LLVM-MinGW gcc:
-`C:/Users/user/AppData/Local/Microsoft/WinGet/Packages/MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe/llvm-mingw-20261006-ucrt-x86_64/bin/gcc.exe`
-Fallback: `bin/ld.lld.exe` in the same dir as linker (may need `-C link-self-contained=yes` tuning).
+**Execute `.system/next_task.md` step by step** (M1 finish + rename to SmartBlink). It is self-contained: toolchain fix, rename, resources, bug list, verification script, stop rules.
+Key correction vs earlier plan: LLVM-MinGW has no libgcc/libgcc_eh → `windows-gnu` target can't link with it; use `x86_64-pc-windows-gnullvm` toolchain.
+
+## Owner decisions 2026-10-23 (review session)
+- Product renamed **SmartBlink** (keep "Smart" prefix = owner's brand series; trademark distance from "Punto Switcher"). Repo folder stays `C:\projects\SmartPunto`.
+- Reviewer model writes specs only; implementation by a cheaper executor model.
+- M1 code review findings (all in next_task.md): PeekMessage loop exits instantly, Exit not wired, icon/manifest not embedded, config loaded before mutex, weak blacklist parser/tests, version.rc line 1 garbage.
 
 ## Blockers
 - MSYS2 mingw64 gcc is broken on this machine: `cc1.exe` missing (`C:\msys64\mingw64\libexec\gcc\x86_64-w64-mingw32` empty) → every link (incl. build scripts proc-macro2/quote/windows_x86_64_gnu) dies with `collect2.exe: error: ld returned 53 exit status`.

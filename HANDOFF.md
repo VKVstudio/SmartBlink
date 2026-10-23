@@ -59,3 +59,15 @@ Read `AGENTS.md`, `.system/checkpoint.md`. Execute M1 only. No push. Update chec
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. One task: repoint linker to LLVM-MinGW gcc → `cargo build --release` → tests → manual tray check → fix warnings → commit (no AI mentions, no push).
+
+## Session #004 — 2026-10-23 — Review (no code)
+
+**Done**
+- Reviewed M1 code (commit `18b1f33`). Verdict: not runnable — `PeekMessageW` loop quits on empty queue; Exit posts WM_QUIT but loop waits for WM_APP+2; icon/manifest never embedded (no build.rs); config written before mutex check; blacklist defaults/parser/test weak; `assets/version.rc` line 1 garbage.
+- Root cause of all link failures found: LLVM-MinGW lacks `libgcc.a`/`libgcc_eh.a`, required by `x86_64-pc-windows-gnu`. Fix = `x86_64-pc-windows-gnullvm` toolchain (matches LLVM-MinGW). `x86_64-w64-mingw32-clang.exe` and `-windres.exe` present.
+- Owner decision: rename to **SmartBlink** (Smart prefix kept).
+- Wrote `.system/next_task.md`: 8-step executor spec with stop rules, exact edits, verification script, commit plan.
+- Process note: commit `18b1f33` was made without a passing build (violated AGENTS.md); previous session looped ~70 identical builds. next_task.md adds a 2-strike stop rule.
+
+**Next agent**
+Read `AGENTS.md`, `.system/checkpoint.md`, then execute `.system/next_task.md` in order.
