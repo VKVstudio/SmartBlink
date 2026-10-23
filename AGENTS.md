@@ -30,8 +30,8 @@ Read `ARCHITECTURE.md` before any code decision. This file is process rules only
 9. Context budget is 64k. One file = one responsibility. Docs must be dense; do not duplicate architecture text into handoff beyond what changed.
 
 ## Build commands
-- Rust toolchain: MSVC target, `cargo build --release` (see `.system/checkpoint.md` for the confirmed local toolchain path if rustc is not on PATH).
-- Resources: `rc.exe assets/version.rc` before linking when version info changes.
+- Rust toolchain: `x86_64-pc-windows-gnullvm` (LLVM-MinGW), `cargo build --release` (user-level `~/.cargo/config.toml` holds linker + `SMARTBLINK_WINDRES`; see `.system/checkpoint.md` for local paths).
+- Resources: compiled automatically by `build.rs` via `windres` when `assets/version.rc`, `assets/app.manifest`, or `assets/icon.ico` change.
 - Installer: `iscc installer/SmartBlink.iss` (Inno Setup 6).
 
 ## Definition of done per milestone

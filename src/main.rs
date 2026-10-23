@@ -7,26 +7,16 @@ mod config;
 mod single_instance;
 mod tray;
 
-use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
-
 fn main() {
-    // SAFETY: single-threaded init before any thread uses COM.
-    let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-
-    let cfg = config::load_or_create();
-
     let _instance = match single_instance::acquire() {
         Some(guard) => guard,
         None => {
-            // Another instance owns the mutex: exit quietly.
-            unsafe { CoUninitialize() };
+            // Another instance owns the mutex: exit quietly before touching config.
             return;
         }
     };
 
-    if tray::run(&cfg).is_err() {
-        // Tray registration failed (e.g. Shell_NotifyIcon refusal): exit without crash.
-    }
+    let _cfg = config::load_or_create();
 
-    unsafe { CoUninitialize() };
+    let _ = tray::run();
 }

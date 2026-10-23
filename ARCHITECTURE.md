@@ -10,13 +10,13 @@ Status: Phase 0 design. No application code yet. This file is the single source 
 
 | Layer | Choice | Reason |
 |---|---|---|
-| Language | **Rust** (edition 2021), MSVC target `x86_64-pc-windows-msvc`, CRT static | Native `.exe`, no .NET/JVM runtime, release binary ~1–3 MB, RSS target <5 MB. Safe concurrency for hook thread ↔ worker thread. |
+| Language | **Rust** (edition 2021), target `x86_64-pc-windows-gnullvm` (LLVM-MinGW, UCRT), no MSVC/SDK required | Native `.exe`, no .NET/JVM runtime, release binary ~1–3 MB, RSS target <5 MB. Safe concurrency for hook thread ↔ worker thread. |
 | WinAPI | `windows` crate (official Microsoft), features limited to what we use | No hand-written bindings drift; direct `WH_KEYBOARD_LL`, `Shell_NotifyIconW`, `ToUnicodeEx`. |
 | UI | Pure Win32: tray (`Shell_NotifyIconW`) + one Settings window created with `CreateWindowExW` (no GUI framework) | Zero dependencies, small footprint. Hotkey dialog is a single dialog template in a `.rc`. |
-| Config | TOML via `toml` crate at `%APPDATA%\SmartBlink\config.toml` | Human-editable, atomic rewrite. |
+| Config | Hand-rolled flat TOML subset in `src/config.rs` (no dependency) at `%APPDATA%\SmartBlink\config.toml` | Human-editable, atomic rewrite. |
 | Audio | WASAPI shared-mode render client + in-memory PCM (16-bit mono 48 kHz, ~30 ms precomputed ring) | No `PlaySound` file I/O, no mixer latency surprises. Fallback: `waveOut` if WASAPI init fails. |
 | Installer | **Inno Setup 6**, `PrivilegesRequired=lowest` (per-user default), optional admin override dialog | Smallest proven installer, native uninstall registration, `/SILENT` for CI. WiX rejected: heavier MSI toolchain; NSIS rejected: weaker uninstall registry defaults. |
-| Build | `cargo` + `rc.exe`/`link.exe`; GitHub Actions `windows-latest` runner produces `SmartBlink-Setup.exe` artifact | Reproducible release pipeline. |
+| Build | `cargo` + `build.rs`/`windres` (LLVM-MinGW); GitHub Actions `windows-latest` runner produces `SmartBlink-Setup.exe` artifact (TODO M11: runner installs LLVM-MinGW) | Reproducible release pipeline. |
 
 Rejected: C++ (build fragility, memory-safety risk in a global hook), C# NativeAOT (still larger image + WinRT projections churn), AutoHotkey/Electron (banned by size/runtime constraints).
 
@@ -107,7 +107,7 @@ Hotkey (default `Ctrl+Alt+Z`, configurable) converts the selected text in the fo
 - "Stubborn user": if a signal is raised and the user continues typing then presses `Space`/`Enter`, the signal fades and that word+layout pair enters a session whitelist (RAM only) so it never alerts again this session.
 
 ### 3.8 Tray, single instance, config
-- Mutex `Global\SmartBlink.Mutex` + a hidden message-only window; second instance sends `WM_USER+1` to the first and exits. On Windows without session-wide `Global\` rights (non-admin), fall back to `Session\...` namespaced mutex.
+- Mutex `Local\SmartBlink.SingleInstance` (per user session — correct for a per-user tray app) + a hidden top-level window; second instance exits silently (M1). Activation message to first instance: deferred.
 - Tray: `Shell_NotifyIconW` with icon states Active / Paused / Immune; callback menu built lazily: Enable/Pause, Alert mode submenu, Fix hotkey submenu, "Run at Windows start" checkbox, Exclusions ("add current window/process"), Settings, About, Exit. Icon double-click opens Settings.
 - Config: `%APPDATA%\SmartBlink\config.toml`, written via temp-file + `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING)` for atomicity; defaults created on first run; schema documented in `docs/CONFIG.md`.
 
@@ -122,7 +122,7 @@ Repo layout:
 
 ```
 src/            core engine, hooks, tray, audio, fix
-assets/         icon.ico, profiles/*.bin, manifest.rc, version.rc
+assets/         icon.ico, app.manifest, version.rc, profiles/*.bin
 tools/profilegen/
 installer/SmartBlink.iss
 .github/workflows/release.yml
@@ -138,7 +138,7 @@ Installer (`PrivilegesRequired=lowest`, `PrivilegesRequiredOverridesAllowed=dial
 - Uninstall: `[Code]` kills the running process (`FindWindow`/mutex handshake → graceful `WM_CLOSE` on message window, then `taskkill /F` fallback), deletes Run value and scheduled task, removes files. `%APPDATA%\SmartBlink` config kept unless user ticks "remove settings".
 - Update path: same AppId; setup detects old version via registry `DisplayVersion`, closes app, replaces binaries, re-registers autostart. No service, no driver.
 
-Release workflow (`windows-latest`): `cargo build --release` → `rc.exe` resources → Inno `/SILENT /Output=SmartBlink-Setup-x.y.z.exe` → upload artifact; signed builds only if user provides a cert (see open questions).
+Release workflow (`windows-latest`): `cargo build --release` (with `windres via build.rs`) → Inno `/SILENT /Output=SmartBlink-Setup-x.y.z.exe` → upload artifact; signed builds only if user provides a cert (see open questions).
 
 ## 5. Security & Privacy by Design
 - Keystrokes never written to disk or network. Ring buffer in RAM, capped, zeroed on reset/exit. No logs of typed content; diagnostics log only counters and process names.

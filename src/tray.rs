@@ -1,19 +1,20 @@
 //! Tray icon + message loop (M1 scope: icon, tooltip, Exit menu).
-//! Uses Shell_NotifyIconW with a hidden message-only window.
+//! Uses Shell_NotifyIconW with a hidden top-level window so TaskbarCreated broadcasts arrive.
 
-use crate::config::Config;
-use windows::core::w;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use std::sync::atomic::{AtomicU32, Ordering};
+use windows::core::{w, PCWSTR};
+use windows::Win32::Foundation::{HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::{
     Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DispatchMessageW,
-    GetCursorPos, IMAGE_ICON, KillTimer, LoadImageW, LR_DEFAULTCOLOR, MF_STRING, MSG, PeekMessageW,
-    PM_REMOVE, PostQuitMessage, RegisterClassW, SetForegroundWindow, ShowWindow, SW_HIDE,
-    TrackPopupMenu, TPM_RETURNCMD, TPM_RIGHTBUTTON, TranslateMessage, WNDCLASSW, WM_APP,
-    WM_LBUTTONUP, WM_RBUTTONUP, WM_TIMER,
+    AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
+    DispatchMessageW, GetCursorPos, GetMessageW, GetSystemMetrics, HICON, IDI_APPLICATION,
+    IMAGE_ICON, LoadIconW, LoadImageW, LR_DEFAULTCOLOR, MF_STRING, MSG, PostMessageW,
+    PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SetForegroundWindow, ShowWindow,
+    SM_CXSMICON, SM_CYSMICON, SW_HIDE, TrackPopupMenu, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TranslateMessage, WNDCLASSW, WM_APP, WM_DESTROY, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP,
 };
 
 pub const WM_TRAY: u32 = WM_APP + 1;
@@ -22,10 +23,15 @@ pub const WM_TRAY_EXIT: usize = (WM_APP + 2) as usize;
 const ICON_UID: u32 = 1;
 const IDI_MAIN: usize = 101; // MAKEINTRESOURCE(101): low word set, high word zero.
 
+static TASKBAR_CREATED_MSG: AtomicU32 = AtomicU32::new(0);
+
 /// Message loop. Returns Ok(()) on clean quit (Exit selected).
-pub fn run(_cfg: &Config) -> windows::core::Result<()> {
+pub fn run() -> windows::core::Result<()> {
     unsafe {
         let hmod = GetModuleHandleW(None)?;
+        let taskbar_created = RegisterWindowMessageW(w!("TaskbarCreated"));
+        TASKBAR_CREATED_MSG.store(taskbar_created, Ordering::Relaxed);
+
         let cls = w!("SmartBlinkTrayWnd");
         let wc = WNDCLASSW {
             lpfnWndProc: Some(wnd_proc),
@@ -51,42 +57,44 @@ pub fn run(_cfg: &Config) -> windows::core::Result<()> {
             HINSTANCE(hmod.0 as _),
             None,
         )?;
-        ShowWindow(hwnd, SW_HIDE).ok();
+        let _ = ShowWindow(hwnd, SW_HIDE);
 
-        add_tray_icon(hwnd, hmod);
+        if let Err(err) = add_tray_icon(hwnd, hmod) {
+            let _ = DestroyWindow(hwnd);
+            return Err(err);
+        }
 
-        // Message loop until PostQuitMessage.
         let mut msg = MSG::default();
-        loop {
-            if !PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
-                break;
-            }
-            if msg.message == WM_APP + 2 {
-                // Exit command posted back from the tray menu handler.
-                break;
-            }
-            TranslateMessage(&msg);
+        while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
+            let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
 
-        remove_tray_icon(hwnd);
         Ok(())
     }
 }
 
-unsafe fn add_tray_icon(hwnd: HWND, hmod: windows::Win32::Foundation::HMODULE) {
-    let hicon = LoadImageW(
-        HINSTANCE(hmod.0 as _),
-
-
-        windows::core::PCWSTR(IDI_MAIN as *const u16), // MAKEINTRESOURCE equivalent
+unsafe fn load_tray_icon(hmod: HMODULE) -> HICON {
+    let hinst = HINSTANCE(hmod.0 as _);
+    let cx = GetSystemMetrics(SM_CXSMICON);
+    let cy = GetSystemMetrics(SM_CYSMICON);
+    if let Ok(h) = LoadImageW(
+        hinst,
+        PCWSTR(IDI_MAIN as *const u16),
         IMAGE_ICON,
-        32,
-        32,
+        cx,
+        cy,
         LR_DEFAULTCOLOR,
-    )
-    .map(|h| windows::Win32::UI::WindowsAndMessaging::HICON(h.0))
-    .unwrap_or(windows::Win32::UI::WindowsAndMessaging::HICON(std::ptr::null_mut()));
+    ) {
+        if !h.is_invalid() {
+            return HICON(h.0);
+        }
+    }
+    LoadIconW(None, IDI_APPLICATION).unwrap_or(HICON(std::ptr::null_mut()))
+}
+
+unsafe fn add_tray_icon(hwnd: HWND, hmod: HMODULE) -> windows::core::Result<()> {
+    let hicon = load_tray_icon(hmod);
 
     let mut nid = NOTIFYICONDATAW {
         cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
@@ -98,7 +106,10 @@ unsafe fn add_tray_icon(hwnd: HWND, hmod: windows::Win32::Foundation::HMODULE) {
         ..Default::default()
     };
     copy_wtext(&utf16_units("SmartBlink"), &mut nid.szTip);
-    Shell_NotifyIconW(NIM_ADD, &nid);
+    if !Shell_NotifyIconW(NIM_ADD, &nid).as_bool() {
+        return Err(windows::core::Error::from_win32());
+    }
+    Ok(())
 }
 
 unsafe fn remove_tray_icon(hwnd: HWND) {
@@ -108,7 +119,7 @@ unsafe fn remove_tray_icon(hwnd: HWND) {
         uID: ICON_UID,
         ..Default::default()
     };
-    Shell_NotifyIconW(NIM_DELETE, &nid);
+    let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
 }
 
 /// Copy a wide string (UTF-16 units, no terminator) into a fixed [u16; N] buffer.
@@ -123,7 +134,12 @@ fn utf16_units(s: &str) -> Vec<u16> {
     s.encode_utf16().collect()
 }
 
-unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn wnd_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     match msg {
         m if m == WM_TRAY => {
             // LOWORD(lparam) = mouse message id.
@@ -133,11 +149,21 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam:
             }
             LRESULT(0)
         }
-        WM_TIMER => {
-            KillTimer(hwnd, 4242).ok();
+        WM_DESTROY => {
+            remove_tray_icon(hwnd);
+            PostQuitMessage(0);
             LRESULT(0)
         }
-        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+        m => {
+            let tc = TASKBAR_CREATED_MSG.load(Ordering::Relaxed);
+            if tc != 0 && m == tc {
+                if let Ok(hmod) = GetModuleHandleW(None) {
+                    let _ = add_tray_icon(hwnd, hmod);
+                }
+                return LRESULT(0);
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
     }
 }
 
@@ -147,13 +173,13 @@ unsafe fn show_menu(hwnd: HWND) {
         Err(_) => return,
     };
     if AppendMenuW(hmenu, MF_STRING, WM_TRAY_EXIT, w!("Exit")).is_err() {
-        DestroyMenu(hmenu).ok();
+        let _ = DestroyMenu(hmenu);
         return;
     }
     // TrackPopupMenu with TPM_RETURNCMD blocks until a command is chosen.
-    SetForegroundWindow(hwnd).ok();
+    let _ = SetForegroundWindow(hwnd);
     let mut pt = POINT::default();
-    GetCursorPos(&mut pt).ok();
+    let _ = GetCursorPos(&mut pt);
     let cmd = TrackPopupMenu(
         hmenu,
         TPM_RIGHTBUTTON | TPM_RETURNCMD,
@@ -163,8 +189,9 @@ unsafe fn show_menu(hwnd: HWND) {
         hwnd,
         None,
     );
-    DestroyMenu(hmenu).ok();
+    let _ = PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0));
+    let _ = DestroyMenu(hmenu);
     if cmd.0 == WM_TRAY_EXIT as i32 {
-        PostQuitMessage(0);
+        let _ = DestroyWindow(hwnd);
     }
 }

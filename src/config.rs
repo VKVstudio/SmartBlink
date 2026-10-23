@@ -71,7 +71,7 @@ pub struct Config {
     pub led_mode: LedMode,
     pub fix_trigger: FixTrigger,
     pub autostart: bool,
-    /// Blacklisted process names (lowercase, no .exe). Passive in these.
+    /// Blacklisted process image names (lowercase, without `.exe`). Passive in these.
     pub blacklist: Vec<String>,
 }
 
@@ -108,19 +108,22 @@ impl Default for Config {
             fix_trigger: FixTrigger::DoubleLeftShift,
             autostart: false,
             blacklist: vec![
-                "terminal".into(),
-                "windows terminal".into(),
-                "code.exe".into(),
-                "devenv.exe".into(),
+                "windowsterminal".into(),
+                "cmd".into(),
+                "powershell".into(),
+                "pwsh".into(),
+                "conhost".into(),
+                "code".into(),
+                "devenv".into(),
             ],
         }
     }
 }
 
 pub fn app_dir() -> PathBuf {
-    let base = std::env::var("APPDATA").map(PathBuf::from).unwrap_or_else(|_| {
-        dirs_fallback()
-    });
+    let base = std::env::var("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| dirs_fallback());
     base.join(APP_DIR_NAME)
 }
 
@@ -147,7 +150,8 @@ pub fn to_toml(cfg: &Config) -> String {
         if i > 0 {
             out.push_str(", ");
         }
-        out.push_str(&format!("\"{}\"", b.replace('"', "\\\"")));
+        let escaped = b.replace('\\', "\\\\").replace('"', "\\\"");
+        out.push_str(&format!("\"{escaped}\""));
     }
     out.push_str("]\n");
     out
@@ -161,7 +165,9 @@ pub fn from_toml(s: &str) -> Config {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let Some((key, val)) = line.split_once('=') else { continue };
+        let Some((key, val)) = line.split_once('=') else {
+            continue;
+        };
         let key = key.trim();
         let val = val.trim();
         match key {
@@ -193,17 +199,55 @@ pub fn from_toml(s: &str) -> Config {
 }
 
 fn unquote(s: &str) -> &str {
-    s.strip_prefix('"').unwrap_or(s).strip_suffix('"').unwrap_or(s)
+    let s = s.trim();
+    if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
+        &s[1..s.len() - 1]
+    } else {
+        s
+    }
 }
 
 fn parse_string_array(s: &str) -> Vec<String> {
-    let inner = s.trim().strip_prefix('[').unwrap_or(s);
-    let inner = inner.strip_suffix(']').unwrap_or(inner);
-    inner
-        .split(',')
-        .map(|p| unquote(p.trim()).to_string())
-        .filter(|p| !p.is_empty())
-        .collect()
+    let s = s.trim();
+    let Some(inner) = s.strip_prefix('[').and_then(|r| r.strip_suffix(']')) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut chars = inner.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_whitespace() || c == ',' {
+            continue;
+        }
+        if c == '"' {
+            let mut item = String::new();
+            while let Some(ch) = chars.next() {
+                if ch == '\\' {
+                    if let Some(esc) = chars.next() {
+                        item.push(esc);
+                    }
+                } else if ch == '"' {
+                    break;
+                } else {
+                    item.push(ch);
+                }
+            }
+            out.push(item);
+        } else {
+            let mut item = String::from(c);
+            while let Some(&ch) = chars.peek() {
+                if ch == ',' {
+                    break;
+                }
+                item.push(ch);
+                chars.next();
+            }
+            let trimmed = item.trim();
+            if !trimmed.is_empty() {
+                out.push(trimmed.to_string());
+            }
+        }
+    }
+    out
 }
 
 /// Load config; create with defaults on first run. Corrupt file -> defaults (never crash).
@@ -220,7 +264,7 @@ pub fn load_or_create() -> Config {
     }
 }
 
-/// Atomic rewrite: temp file in same dir, flush, rename over target.
+/// Atomic rewrite: temp file in same dir, sync_all, rename over target.
 pub fn save(cfg: &Config) -> std::io::Result<()> {
     let dir = app_dir();
     fs::create_dir_all(&dir)?;
@@ -228,7 +272,7 @@ pub fn save(cfg: &Config) -> std::io::Result<()> {
     let tmp = dir.join(format!("{CONFIG_FILE_NAME}.tmp"));
     let mut f = fs::File::create(&tmp)?;
     f.write_all(to_toml(cfg).as_bytes())?;
-    f.flush()?;
+    f.sync_all()?;
     drop(f);
     fs::rename(&tmp, &path)
 }
@@ -246,7 +290,18 @@ mod tests {
         assert_eq!(back.led_mode, cfg.led_mode);
         assert_eq!(back.fix_trigger, cfg.fix_trigger);
         assert_eq!(back.autostart, cfg.autostart);
-        assert_eq!(back.blacklist, cfg.blacklist);
+        assert_eq!(
+            back.blacklist,
+            vec![
+                "windowsterminal",
+                "cmd",
+                "powershell",
+                "pwsh",
+                "conhost",
+                "code",
+                "devenv"
+            ]
+        );
     }
 
     #[test]
@@ -256,14 +311,14 @@ mod tests {
             led_mode: LedMode::CapsLockGuarded,
             fix_trigger: FixTrigger::PauseBreak,
             autostart: true,
-            blacklist: vec!["code.exe".into(), "chrome.exe".into()],
+            blacklist: vec!["code".into(), "chrome".into()],
         };
         let back = from_toml(&to_toml(&cfg));
         assert_eq!(back.notify_mode, NotifyMode::Silent);
         assert_eq!(back.led_mode, LedMode::CapsLockGuarded);
         assert_eq!(back.fix_trigger, FixTrigger::PauseBreak);
         assert!(back.autostart);
-        assert_eq!(back.blacklist.len(), 2);
+        assert_eq!(back.blacklist, vec!["code", "chrome"]);
     }
 
     #[test]
@@ -271,15 +326,27 @@ mod tests {
         let back = from_toml("notify_mode = \"nonsense\"\n???garbage\nautostart = maybe");
         assert_eq!(back.notify_mode, NotifyMode::Both);
         assert!(!back.autostart);
+        assert_eq!(back.blacklist, Config::default().blacklist);
     }
 
     #[test]
-    fn blacklist_with_spaces_and_quotes() {
+    fn blacklist_escapes_and_commas_roundtrip() {
+        let expected: Vec<String> = vec![
+            r#"we"ird, app"#.into(),
+            r"back\slash".into(),
+            "term".into(),
+        ];
         let cfg = Config {
-            blacklist: vec![r#"we"ird app.exe"#.into(), "term.exe".into()],
+            blacklist: expected.clone(),
             ..Default::default()
         };
         let back = from_toml(&to_toml(&cfg));
-        assert_eq!(back.blacklist.len(), 2);
+        assert_eq!(back.blacklist, expected);
+    }
+
+    #[test]
+    fn empty_blacklist_roundtrip() {
+        let back = from_toml("blacklist = []\n");
+        assert!(back.blacklist.is_empty());
     }
 }
