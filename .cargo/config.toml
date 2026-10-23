@@ -1,12 +1,3 @@
-# GNU toolchain (MinGW-w64 via MSYS2) for the release binary.
+# Toolchain: LLVM-MinGW (gnullvm). Linker path is machine-specific: set it in ~/.cargo/config.toml.
 [build]
-target = "x86_64-pc-windows-gnu"
-
-[target.x86_64-pc-windows-gnu]
-linker = "C:/msys64/mingw64/bin/gcc.exe"
-
-
-
-
-
-
+target = "x86_64-pc-windows-gnullvm"
