@@ -1,0 +1,39 @@
+Microsoft (R) COFF resource compiler example script
+; SmartPunto application icon + version info.
+; Build: rc.exe /fo assets\version.res assets\version.rc
+#include <windows.h>
+
+IDI_MAIN ICON "icon.ico"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 0,1,0,0
+ PRODUCTVERSION 0,1,0,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "00000409"
+        BEGIN
+            VALUE "CompanyName", "VKV Studio"
+            VALUE "FileDescription", "SmartPunto - wrong-layout typing detection and one-gesture fix"
+            VALUE "FileVersion", "0.1.0.0"
+            VALUE "InternalName", "smartpunto"
+            VALUE "LegalCopyright", "MIT License - Copyright (c) 2026 VKV Studio"
+            VALUE "OriginalFilename", "smartpunto.exe"
+            VALUE "ProductName", "SmartPunto"
+            VALUE "ProductVersion", "0.1.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0, 1200
+    END
+END

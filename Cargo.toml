@@ -1,0 +1,32 @@
+[package]
+name = "smartpunto"
+version = "0.1.0"
+description = "Wrong-layout typing detection and one-gesture fix for Windows"
+license = "MIT"
+edition = "2021"
+rust-version = "1.75"
+
+[[bin]]
+name = "smartpunto"
+path = "src/main.rs"
+
+[dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Threading",
+    "Win32_System_Com",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+panic = "abort"
+codegen-units = 1

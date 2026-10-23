@@ -36,3 +36,26 @@ Read `AGENTS.md` §Session Protocol, then `.system/checkpoint.md`. Do only the t
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. Execute M1 only. No push. Update checkpoint + append entry here.
+
+## Session #003 — 2026-10-23 — Antigravity (M1 start, toolchain pivot to GNU)
+
+**Done**
+- M1 skeleton written: `Cargo.toml` (windows 0.58, gnu target), `.cargo/config.toml`, `src/{main,config,single_instance,tray}.rs`, `assets/icon.ico` + `version.rc`, `tools/gen_icon.py`, `.gitignore`. Uncommitted.
+- rustup default switched to `stable-x86_64-pc-windows-gnu` (1.99.1). Crate compiles clean on gnu; only 5 unused-Result warnings in tray.rs remain.
+
+**Owner directives this session**
+- MSVC forbidden: no cl.exe/link.exe attempts, no Windows SDK install. GNU toolchain only (`x86_64-pc-windows-gnu`).
+- Session stopped by owner at 21:59 before link fix; state saved here + checkpoint.md (rewritten).
+
+**Toolchain facts (verified)**
+- rustc/cargo not on PATH: prepend `C:\Users\user\.cargo\bin` per command.
+- MSYS2 mingw64 gcc broken: `cc1.exe` missing → `collect2.exe: ld returned 53`. Do not use.
+- Working candidate (untested as linker): LLVM-MinGW UCRT gcc at `C:\Users\user\AppData\Local\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\llvm-mingw-20261006-ucrt-x86_64\bin\gcc.exe` (`--version` OK; `ld.lld.exe` alongside). Set as `[target.x86_64-pc-windows-gnu] linker` in `.cargo/config.toml` on next session.
+- windows 0.58 API gotchas learned: `Param<>` needs direct values (`HINSTANCE(hmod)`, not `Some(...)`); `LoadImageW` → `Result<HANDLE>`; tooltip via `copy_wtext(&utf16_units(...), &mut nid.szTip)` (w!() is PCWSTR, not &[u16]); `CreateMutexW` behind `Win32_Security`.
+
+**Not verified / pending**
+- No exe: link never succeeded. No tests run, no tray smoke test. M1 NOT complete.
+- Junk logs in repo root: `scratch_build_m1.log`, `scratch_sdk_install.log`, `scratch/` — listed, not deleted, not committed.
+
+**Next agent**
+Read `AGENTS.md`, `.system/checkpoint.md`. One task: repoint linker to LLVM-MinGW gcc → `cargo build --release` → tests → manual tray check → fix warnings → commit (no AI mentions, no push).
