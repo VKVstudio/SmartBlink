@@ -1,6 +1,6 @@
 # Checkpoint — SmartBlink
 
-`Current Phase`: M1 code complete, automated verification passed, owner manual tray check pending.
+`Current Phase`: M1 complete (automated + owner manual tray verification confirmed 2026-10-23). Ready for M2.
 `Approved Stack`: Rust (`x86_64-pc-windows-gnullvm` via LLVM-MinGW UCRT; MSVC/Windows SDK forbidden), `windows` crate 0.58, Win32 tray + Settings window, hand-rolled flat TOML config in `%APPDATA%\SmartBlink\config.toml`, WASAPI shared audio, Inno Setup 6 installer (per-user default `{autopf}`, optional elevated ONLOGON scheduled task). License MIT. Publisher `VKV Studio` / vkvstudio.com. Min OS: Windows 10 1809. Default fix hotkey: double Left Shift. Default alert mode: Both (audio + LED), LED defaults to Scroll Lock.
 
 ## Completed
@@ -20,10 +20,9 @@
   - `first alive: True`
   - `second exited: True`
   - `config exists: True` at `%APPDATA%\SmartBlink\config.toml` with expected default contents.
-- Pending owner manual check on interactive desktop: tray icon + tooltip `"SmartBlink"`, right-click -> `Exit` closes process and removes icon, Explorer restart restores icon.
+- Owner manual check on interactive desktop (2026-10-23): confirmed tray icon (orange-arrow keycap) + `Exit` popup menu working.
 
 ## Next Immediate Task
-After owner confirms M1 manual tray check:
 M2 — Keyboard/mouse hooks (`WH_KEYBOARD_LL`, `WH_MOUSE_LL`), lock-free SPSC ring buffer (RAM only, zeroed on reset), foreground window/process immunity check, tray Pause/Resume toggle (see `ARCHITECTURE.md` §2, §3.7, §6).
 
 ## Blockers

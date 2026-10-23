@@ -87,7 +87,7 @@ Read `AGENTS.md`, `.system/checkpoint.md`, then execute `.system/next_task.md` i
 - `cargo build --release` → 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe` built, `VersionInfo.ProductName == "SmartBlink"`.
 - `cargo test --release` → `test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s`.
 - Step 7 automated script → `first alive: True`, `second exited: True`, `config exists: True` (`%APPDATA%\SmartBlink\config.toml`).
-- Pending: owner manual tray check on interactive desktop (icon, tooltip, Exit, Explorer restart).
+- Owner manual tray check (2026-10-23): confirmed custom icon + `Exit` popup menu working on desktop. M1 complete.
 
 **Next agent**
-Once owner confirms manual tray check, replace `.system/next_task.md` with `# NEXT TASK\nSee checkpoint.md` and proceed to M2 (`ARCHITECTURE.md` §2, §3.7, §6).
+Read `AGENTS.md`, `.system/checkpoint.md`. Execute M2 (`ARCHITECTURE.md` §2, §3.7, §6).
