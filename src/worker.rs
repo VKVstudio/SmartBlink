@@ -20,7 +20,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 pub const MAX_WORD_KEYS: usize = 256;
-pub const IDLE_RESET_MS: u32 = 3500;
+pub const IDLE_RESET_MS: u32 = 60_000;
 const WORKER_TICK_MS: u64 = 33; // ~30 Hz
 
 // Win32 virtual key codes used for buffer lifecycle rules.
@@ -371,6 +371,7 @@ pub fn start(
             let mut pending_caps_blink = false;
             let mut word_alerted = false;
             let mut last_key_instant: Option<Instant> = None;
+            let mut last_typing_hwnd: isize = 0;
             let mut seen_cfg_rev = crate::config::config_revision();
 
             while !stop_flag.load(Ordering::Acquire) {
@@ -400,40 +401,49 @@ pub fn start(
                     pending_caps_blink = false;
                     word_alerted = false;
                     last_key_instant = None;
+                    last_typing_hwnd = 0;
                     global_ring().clear_and_zero();
                     thread::sleep(Duration::from_millis(WORKER_TICK_MS));
                     continue;
                 }
 
-                let status = focus.update(&blacklist);
-                if status.hwnd_changed || status.is_immune {
-                    if status.hwnd_changed {
-                        let refreshed = layout::active_layouts();
-                        if !refreshed.is_empty() {
-                            for &hkl in &refreshed {
-                                let _ = layout_cache.get_or_build(hkl);
-                            }
-                            active_hkls = refreshed;
+                let mut status = focus.update(&blacklist);
+                if status.hwnd_changed {
+                    let refreshed = layout::active_layouts();
+                    if !refreshed.is_empty() {
+                        for &hkl in &refreshed {
+                            let _ = layout_cache.get_or_build(hkl);
                         }
+                        active_hkls = refreshed;
                     }
-                    if !word_buf.is_empty() {
-                        word_buf.reset();
-                    }
-                    word_buf.clear_modifiers();
-                    zero_and_clear_vec(&mut ctrl_snapshot);
-                    fix_detector.reset();
-                    selection_detector.reset();
-                    if last_verdict.is_some() {
-                        last_verdict = None;
-                    }
-                    word_blinked = false;
-                    pending_caps_blink = false;
-                    word_alerted = false;
-                    last_key_instant = None;
                 }
 
                 let mut had_typing_key = false;
                 while let Some(rec) = global_ring().pop() {
+                    status = focus.update(&blacklist);
+                    let cur_hwnd_raw = focus.current_hwnd().0 as isize;
+                    if status.is_immune
+                        || (cur_hwnd_raw != 0
+                            && last_typing_hwnd != 0
+                            && cur_hwnd_raw != last_typing_hwnd)
+                    {
+                        if !word_buf.is_empty() {
+                            word_buf.reset();
+                        }
+                        word_buf.clear_modifiers();
+                        zero_and_clear_vec(&mut ctrl_snapshot);
+                        fix_detector.reset();
+                        selection_detector.reset();
+                        last_verdict = None;
+                        word_blinked = false;
+                        pending_caps_blink = false;
+                        word_alerted = false;
+                        last_key_instant = None;
+                    }
+                    if cur_hwnd_raw != 0 && !status.is_immune {
+                        last_typing_hwnd = cur_hwnd_raw;
+                    }
+
                     if rec.kind == InputKind::MouseClick
                         || (rec.kind == InputKind::KeyDown && rec.vk == VK_TAB)
                     {
@@ -716,8 +726,8 @@ mod tests {
         buf.feed(key_down(0x42, 0x30, 1100));
         assert_eq!(buf.len(), 2);
 
-        // 4000 ms gap > IDLE_RESET_MS (3500 ms) -> resets old word and starts fresh.
-        buf.feed(key_down(0x43, 0x2E, 5101));
+        // Gap > IDLE_RESET_MS (60_000 ms) -> resets old word and starts fresh.
+        buf.feed(key_down(0x43, 0x2E, 1100 + IDLE_RESET_MS + 100));
         assert_eq!(buf.len(), 1);
         assert_eq!(buf.as_slice()[0].vk, 0x43);
     }

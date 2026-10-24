@@ -89,6 +89,7 @@ pub fn is_hwnd_ime_active(hwnd: HWND) -> bool {
 pub struct FocusCache {
     last_hwnd: isize,
     last_immune: bool,
+    needs_recheck: bool,
     uia: Option<IUIAutomation>,
     uia_init_attempted: bool,
 }
@@ -104,6 +105,7 @@ impl FocusCache {
         Self {
             last_hwnd: 0,
             last_immune: false,
+            needs_recheck: false,
             uia: None,
             uia_init_attempted: false,
         }
@@ -114,8 +116,7 @@ impl FocusCache {
     }
 
     pub fn invalidate(&mut self) {
-        self.last_hwnd = 0;
-        self.last_immune = false;
+        self.needs_recheck = true;
     }
 
     fn ensure_uia(&mut self) -> Option<&IUIAutomation> {
@@ -162,20 +163,23 @@ impl FocusCache {
 
     pub fn update_for_hwnd(&mut self, hwnd: HWND, blacklist: &[String]) -> FocusStatus {
         let raw = hwnd.0 as isize;
-        if raw == self.last_hwnd && raw != 0 {
+        if raw == 0 {
+            // Transient NULL foreground window during Win32 window activation/deactivation:
+            // preserve last known HWND so we never falsely reset `WordBuffer` mid-word.
+            return FocusStatus {
+                hwnd_changed: false,
+                is_immune: self.last_immune,
+            };
+        }
+        let changed = raw != self.last_hwnd;
+        if !changed && !self.needs_recheck {
             return FocusStatus {
                 hwnd_changed: false,
                 is_immune: self.last_immune,
             };
         }
         self.last_hwnd = raw;
-        if raw == 0 {
-            self.last_immune = false;
-            return FocusStatus {
-                hwnd_changed: true,
-                is_immune: false,
-            };
-        }
+        self.needs_recheck = false;
         let proc_immune = match query_hwnd_process_name(hwnd) {
             Some(proc_name) => {
                 crate::config::set_last_foreground_process(&proc_name);
@@ -186,7 +190,7 @@ impl FocusCache {
         let immune = proc_immune || is_hwnd_ime_active(hwnd) || self.is_focused_password();
         self.last_immune = immune;
         FocusStatus {
-            hwnd_changed: true,
+            hwnd_changed: changed,
             is_immune: immune,
         }
     }
