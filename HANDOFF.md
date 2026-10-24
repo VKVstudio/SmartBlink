@@ -306,3 +306,19 @@ All 12 milestones (M1–M12) are complete. Await owner desktop verification and 
 - `cargo test --release` → `test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s`.
 - `cargo build --release` → 0 warnings.
 - `ISCC.exe installer\SmartBlink.iss` → `target\installer\SmartBlink-Setup-1.0.0.exe`.
+
+
+## Session #020 — 2026-10-25 — Brand SVG icons & Canonical Dark Bento UI (`Settings`, `About`, `Tray Flyout`)
+
+**Done**
+- Added brand vector assets `assets/smartblink-logo.svg` (large logo with `#00e5ff` glow & `#8b95a5` 50% group strokes) and `assets/smartblink-tray.svg` (small tray/app icon with 18/20 stroke weights).
+- Updated `tools/gen_icon.py` and regenerated `assets/icon.ico` (`16, 24, 32, 48, 256` px frames) directly from `smartblink-tray.svg` cubic Bezier geometry.
+- Rebuilt `src/settings.rs` and `src/tray.rs` into a unified DPI-aware 32-bit ARGB **Canonical Dark Bento UI** (`#0B0E14` canvas, `#121722` tiles, `#00E5FF` cyan & `#8B95A5` slate brand accents, DWM dark frame & rounded corners):
+  - `SmartBlinkSettingsWnd` (`860×608` logical px): asymmetric 12-column Bento mosaic (`7+5`, `7+5`, `6+6`, `8+4` spans) with vector-rendered `smartblink-logo.svg`, live engine toggle, hardware alert tester with pulse feedback, 2×2 1-click Alert Mode cards, 2×1 LED Target cards, 3 mechanical keycap Fix Trigger cards, Startup/Admin toggle switches, and interactive Immune Apps chip manager.
+  - `SmartBlinkAboutWnd` (`540×392` logical px): custom Bento About window replacing `MessageBoxW`.
+  - `SmartBlinkTrayPopupWnd` (`368×472` logical px): borderless Dark Bento Tray Flyout on right-click; single left-click on tray icon opens Settings directly.
+
+**Verified**
+- `cargo test --release` → `test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s`.
+- `cargo build --release` → 0 warnings.
+- `ISCC.exe installer\SmartBlink.iss` → `target\installer\SmartBlink-Setup-1.0.0.exe` + `SHA256SUMS.txt` updated.

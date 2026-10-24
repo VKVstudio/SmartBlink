@@ -1,6 +1,6 @@
 # Checkpoint — SmartBlink
 
-`Current Phase`: M12 + live audit bugfix pass complete (`v1.0.0`, 41/41 unit tests green, release binary & Inno Setup 6 installer rebuilt, `SHA256SUMS.txt` updated).
+`Current Phase`: M12 + live audit bugfix pass + Canonical Dark Bento UI & Brand Assets complete (`v1.0.0`, 43/43 unit tests green, release binary & Inno Setup 6 installer rebuilt, `SHA256SUMS.txt` updated).
 `Approved Stack`: Rust (`x86_64-pc-windows-gnullvm` via LLVM-MinGW UCRT; MSVC/Windows SDK forbidden), `windows` crate 0.58, Win32 tray + Settings window, hand-rolled flat TOML config in `%APPDATA%\SmartBlink\config.toml`, WASAPI shared audio, Inno Setup 6 installer (per-user default `{autopf}`, optional elevated ONLOGON scheduled task). License MIT. Publisher `VKV Studio` / vkvstudio.com. Min OS: Windows 10 1809. Default fix hotkey: double Left Shift. Default alert mode: Both (audio + LED), LED defaults to Scroll Lock.
 
 ## Completed
@@ -35,7 +35,7 @@
 
 ## Verified
 - `cargo build --release`: 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe` (`ProductVersion == 1.0.0.0`).
-- `cargo test --release`: `test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s`.
+- `cargo test --release`: `test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s`.
 - `ISCC.exe installer\SmartBlink.iss`: `Successful compile` -> `target\installer\SmartBlink-Setup-1.0.0.exe`.
 - `target\installer\SHA256SUMS.txt` generated for both `smartblink.exe` and `SmartBlink-Setup-1.0.0.exe`.
 
