@@ -6,6 +6,7 @@
 
 use crate::hooks;
 use crate::immunity::FocusCache;
+use crate::layout::{self, LayoutCache};
 use crate::ring::{global_ring, InputKind, InputRecord};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -55,6 +56,7 @@ pub struct KeyStrokeSlot {
     pub scan_code: u16,
     pub flags: u32,
     pub ms_tick: u32,
+    pub shift: bool,
 }
 
 impl KeyStrokeSlot {
@@ -64,6 +66,7 @@ impl KeyStrokeSlot {
             scan_code: 0,
             flags: 0,
             ms_tick: 0,
+            shift: false,
         }
     }
 }
@@ -72,6 +75,7 @@ pub struct WordBuffer {
     slots: [KeyStrokeSlot; MAX_WORD_KEYS],
     len: usize,
     last_tick: Option<u32>,
+    shift_down: bool,
     ctrl_down: bool,
     alt_down: bool,
     win_down: bool,
@@ -95,6 +99,7 @@ impl WordBuffer {
             slots: [KeyStrokeSlot::zeroed(); MAX_WORD_KEYS],
             len: 0,
             last_tick: None,
+            shift_down: false,
             ctrl_down: false,
             alt_down: false,
             win_down: false,
@@ -135,16 +140,24 @@ impl WordBuffer {
                 self.reset();
             }
             InputKind::KeyUp => {
-                self.update_modifier(rec.vk, false);
+                if is_shift_vk(rec.vk) {
+                    self.shift_down = false;
+                } else {
+                    self.update_modifier(rec.vk, false);
+                }
             }
             InputKind::KeyDown => {
+                if is_shift_vk(rec.vk) {
+                    self.shift_down = true;
+                    return;
+                }
                 if self.update_modifier(rec.vk, true) {
                     // Pressing Ctrl, Alt, or Win resets the active word buffer.
                     self.reset();
                     return;
                 }
 
-                // Ignore pure shift/lock/pause keys for word buffer content.
+                // Ignore pure lock/pause keys for word buffer content.
                 if is_non_text_toggle_or_shift(rec.vk) {
                     return;
                 }
@@ -190,6 +203,7 @@ impl WordBuffer {
                     scan_code: rec.scan_code,
                     flags: rec.flags,
                     ms_tick: rec.ms_tick,
+                    shift: self.shift_down,
                 };
                 self.len += 1;
                 self.last_tick = Some(rec.ms_tick);
@@ -215,6 +229,10 @@ impl WordBuffer {
             _ => false,
         }
     }
+}
+
+fn is_shift_vk(vk: u16) -> bool {
+    matches!(vk, VK_SHIFT | VK_LSHIFT | VK_RSHIFT)
 }
 
 fn is_non_text_toggle_or_shift(vk: u16) -> bool {
@@ -268,6 +286,10 @@ pub fn start(blacklist: Vec<String>) -> windows::core::Result<WorkerGuard> {
         .spawn(move || {
             let mut focus = FocusCache::new();
             let mut word_buf = WordBuffer::new();
+            let mut layout_cache = LayoutCache::new();
+            for hkl in layout::active_layouts() {
+                let _ = layout_cache.get_or_build(hkl);
+            }
 
             while !stop_flag.load(Ordering::Acquire) {
                 if hooks::is_paused() {
