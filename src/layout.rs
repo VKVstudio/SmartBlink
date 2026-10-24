@@ -13,7 +13,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyboardLayout, GetKeyboardLayoutList, MapVirtualKeyExW, ToUnicodeEx, HKL,
     MAPVK_VSC_TO_VK_EX,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, LLKHF_EXTENDED};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetGUIThreadInfo, GetWindowThreadProcessId, GUITHREADINFO, LLKHF_EXTENDED,
+};
 
 /// Win10 1607+ flag: do not mutate kernel dead-key state inside `ToUnicodeEx`.
 pub const UNICODE_NO_CHANGED_STATE: u32 = 0x0004;
@@ -67,16 +69,34 @@ pub fn active_layouts() -> Vec<HKL> {
     }
 }
 
-/// Query the active `HKL` of the thread owning `hwnd` (or current thread if `hwnd` is null).
-pub fn window_layout(hwnd: HWND) -> HKL {
-    unsafe {
-        let tid = if hwnd.0.is_null() {
-            0
-        } else {
-            GetWindowThreadProcessId(hwnd, None)
-        };
-        GetKeyboardLayout(tid)
+/// Resolves the actual focused child window and thread ID for a top-level window.
+/// In multi-threaded apps (Chromium, Electron, MDI, WinUI), keyboard focus may belong to a child HWND.
+pub fn focused_window_and_thread(hwnd: HWND) -> (HWND, u32) {
+    if hwnd.0.is_null() {
+        return (HWND(core::ptr::null_mut()), 0);
     }
+    unsafe {
+        let tid = GetWindowThreadProcessId(hwnd, None);
+        if tid == 0 {
+            return (hwnd, 0);
+        }
+        let mut gui = GUITHREADINFO {
+            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+            ..Default::default()
+        };
+        if GetGUIThreadInfo(tid, &mut gui).is_ok() && !gui.hwndFocus.0.is_null() {
+            let focus_tid = GetWindowThreadProcessId(gui.hwndFocus, None);
+            (gui.hwndFocus, if focus_tid != 0 { focus_tid } else { tid })
+        } else {
+            (hwnd, tid)
+        }
+    }
+}
+
+/// Query the active `HKL` of the thread owning `hwnd` or its focused child control.
+pub fn window_layout(hwnd: HWND) -> HKL {
+    let (_, tid) = focused_window_and_thread(hwnd);
+    unsafe { GetKeyboardLayout(tid) }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

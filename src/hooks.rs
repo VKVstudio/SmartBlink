@@ -30,9 +30,6 @@ pub fn is_paused() -> bool {
 
 pub fn set_paused(paused: bool) {
     PAUSED.store(paused, Ordering::Release);
-    if paused {
-        global_ring().clear_and_zero();
-    }
 }
 
 /// Toggle pause state and return the new state (`true` = paused).
@@ -72,11 +69,7 @@ unsafe extern "system" fn low_level_keyboard_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    if ncode == HC_ACTION as i32
-        && !PAUSED.load(Ordering::Relaxed)
-        && SUPPRESS_DEPTH.load(Ordering::Acquire) == 0
-        && lparam.0 != 0
-    {
+    if ncode == HC_ACTION as i32 && !PAUSED.load(Ordering::Relaxed) && lparam.0 != 0 {
         let kb = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
         let injected_mask = LLKHF_INJECTED.0 | LLKHF_LOWER_IL_INJECTED.0;
         if (kb.flags.0 & injected_mask) == 0 {

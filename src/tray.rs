@@ -387,6 +387,7 @@ unsafe fn show_menu(hwnd: HWND) {
     let _ = DestroyMenu(hmenu);
 
     handle_menu_command(hwnd, cmd.0 as usize);
+    settings::refresh_if_open();
 }
 
 unsafe fn handle_menu_command(hwnd: HWND, cmd: usize) {

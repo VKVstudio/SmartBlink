@@ -22,7 +22,8 @@ use windows::core::PSTR;
 use windows::Win32::Media::Audio::{
     eConsole, eRender, waveOutClose, waveOutOpen, waveOutPrepareHeader, waveOutReset,
     waveOutUnprepareHeader, waveOutWrite, IAudioClient, IAudioRenderClient, IMMDeviceEnumerator,
-    MMDeviceEnumerator, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
+    MMDeviceEnumerator, AUDCLNT_E_DEVICE_INVALIDATED, AUDCLNT_E_NOT_STOPPED,
+    AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
     AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, CALLBACK_NULL, HWAVEOUT, WAVEFORMATEX, WAVEHDR,
     WAVE_FORMAT_PCM, WAVE_MAPPER,
 };
@@ -46,9 +47,11 @@ pub const SCAN_CAPITAL: u16 = 0x3A;
 pub const VK_SCROLL_U16: u16 = 0x91;
 pub const SCAN_SCROLL: u16 = 0x46;
 
-/// Minimum typing gap required before starting a Caps Lock blink (`ARCHITECTURE.md` §3.4).
-pub const CAPS_MIN_GAP_MS: u32 = 80;
+/// Minimum idle gap required before starting a Caps Lock blink (`ARCHITECTURE.md` §3.4).
+/// Set to 350 ms so normal mid-word typing (100–250 ms between keys) never triggers Caps Lock mid-word.
+pub const CAPS_MIN_GAP_MS: u32 = 350;
 const BLINK_HOLD_MS: u64 = 75;
+const CAPS_HOLD_MS: u64 = 25;
 const BLINK_GAP_MS: u64 = 50;
 const BLINK_SLICE_MS: u64 = 5;
 
@@ -169,8 +172,11 @@ impl WasapiClicker {
         let t0 = Instant::now();
         let frames = (CLICK_FRAMES as u32).min(self.buffer_frames);
         unsafe {
-            let _ = self.audio_client.Stop();
-            let _ = self.audio_client.Reset();
+            let padding = self.audio_client.GetCurrentPadding().unwrap_or(0);
+            if self.buffer_frames.saturating_sub(padding) < frames {
+                let _ = self.audio_client.Stop();
+                let _ = self.audio_client.Reset();
+            }
             let buf_ptr = self.render_client.GetBuffer(frames)?;
             ptr::copy_nonoverlapping(
                 pcm.as_ptr() as *const u8,
@@ -178,7 +184,11 @@ impl WasapiClicker {
                 (frames as usize) * size_of::<i16>(),
             );
             self.render_client.ReleaseBuffer(frames, 0)?;
-            self.audio_client.Start()?;
+            match self.audio_client.Start() {
+                Ok(()) => {}
+                Err(e) if e.code() == AUDCLNT_E_NOT_STOPPED => {}
+                Err(e) => return Err(e),
+            }
         }
         Ok(t0.elapsed().as_micros() as u64)
     }
@@ -300,18 +310,19 @@ pub fn inject_lock_toggle(vk: u16, scan_code: u16) -> bool {
     sent == inputs.len() as u32
 }
 
-/// Execute a net-zero double LED blink on `Scroll Lock` or `Caps Lock` (`ARCHITECTURE.md` §3.4, `AGENTS.md` #8).
+/// Execute a net-zero LED blink on `Scroll Lock` or `Caps Lock` (`ARCHITECTURE.md` §3.4, `AGENTS.md` #8).
 /// Each pulse is strictly paired (Toggle ON + Toggle OFF) and aborts immediately if a real keystroke arrives.
+/// `CapsLockGuarded` uses a single ultra-short 25 ms pulse so it cannot collide with user character casing.
 pub fn blink_led_net_zero(mode: LedMode) -> bool {
-    let (vk, scan) = match mode {
-        LedMode::ScrollLock => (VK_SCROLL_U16, SCAN_SCROLL),
-        LedMode::CapsLockGuarded => (VK_CAPITAL_U16, SCAN_CAPITAL),
+    let (vk, scan, pulses, hold_ms) = match mode {
+        LedMode::ScrollLock => (VK_SCROLL_U16, SCAN_SCROLL, 2usize, BLINK_HOLD_MS),
+        LedMode::CapsLockGuarded => (VK_CAPITAL_U16, SCAN_CAPITAL, 1usize, CAPS_HOLD_MS),
     };
 
     let orig_toggled = is_lock_key_toggled(vk);
     let seq0 = hooks::real_key_seq();
 
-    for pulse in 0..2 {
+    for pulse in 0..pulses {
         if hooks::is_paused() || hooks::real_key_seq() != seq0 {
             break;
         }
@@ -320,7 +331,7 @@ pub fn blink_led_net_zero(mode: LedMode) -> bool {
             break;
         }
 
-        let slices = BLINK_HOLD_MS / BLINK_SLICE_MS;
+        let slices = hold_ms / BLINK_SLICE_MS;
         for _ in 0..slices {
             if hooks::is_paused() || hooks::real_key_seq() != seq0 {
                 break;
@@ -331,7 +342,7 @@ pub fn blink_led_net_zero(mode: LedMode) -> bool {
         // Toggle #2 (OFF): always paired with Toggle #1 so injected toggle count is strictly even.
         let _ = inject_lock_toggle(vk, scan);
 
-        if pulse == 0 && !hooks::is_paused() && hooks::real_key_seq() == seq0 {
+        if pulse + 1 < pulses && !hooks::is_paused() && hooks::real_key_seq() == seq0 {
             let gap_slices = BLINK_GAP_MS / BLINK_SLICE_MS;
             for _ in 0..gap_slices {
                 if hooks::is_paused() || hooks::real_key_seq() != seq0 {
@@ -351,6 +362,30 @@ pub fn blink_led_net_zero(mode: LedMode) -> bool {
     }
 
     is_lock_key_toggled(vk) == orig_toggled
+}
+
+/// Trigger a one-shot test alert (sound + LED blink) on a short background thread (used by Settings UI).
+pub fn trigger_test_alert(notify_mode: NotifyMode, led_mode: LedMode) {
+    thread::spawn(move || unsafe {
+        if matches!(notify_mode, NotifyMode::Sound | NotifyMode::Both | NotifyMode::Silent) {
+            let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
+            let mut pcm = generate_click_pcm();
+            if let Ok(w) = WasapiClicker::new() {
+                if w.play_click(&pcm).is_ok() {
+                    thread::sleep(Duration::from_millis(32));
+                    w.stop_and_reset();
+                }
+            } else if let Some(wo) = WaveOutClicker::new() {
+                wo.play_click_blocking(&mut pcm);
+            }
+            if hr.is_ok() {
+                CoUninitialize();
+            }
+        }
+        if matches!(notify_mode, NotifyMode::Led | NotifyMode::Both | NotifyMode::Silent) {
+            let _ = blink_led_net_zero(led_mode);
+        }
+    });
 }
 
 pub struct SignalEngine {
@@ -396,8 +431,8 @@ impl SignalEngine {
             .spawn(move || unsafe {
                 let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
                 let mut pcm = generate_click_pcm();
-                let wasapi = WasapiClicker::new().ok();
-                let wave_out = if wasapi.is_none() {
+                let mut wasapi = WasapiClicker::new().ok();
+                let mut wave_out = if wasapi.is_none() {
                     WaveOutClicker::new()
                 } else {
                     None
@@ -406,23 +441,44 @@ impl SignalEngine {
                 while !stop_audio.load(Ordering::Acquire) {
                     if click_flag.swap(false, Ordering::AcqRel) {
                         if !hooks::is_paused() {
+                            let mut played = false;
                             if let Some(ref w) = wasapi {
-                                if w.play_click(&pcm).is_ok() {
-                                    // Wait ~30 ms for the 24 ms sample to drain, unless re-triggered early.
-                                    for _ in 0..6 {
-                                        if stop_audio.load(Ordering::Acquire)
-                                            || click_flag.load(Ordering::Acquire)
-                                        {
-                                            break;
+                                match w.play_click(&pcm) {
+                                    Ok(_) => {
+                                        played = true;
+                                        for _ in 0..6 {
+                                            if stop_audio.load(Ordering::Acquire)
+                                                || click_flag.load(Ordering::Acquire)
+                                            {
+                                                break;
+                                            }
+                                            thread::sleep(Duration::from_millis(5));
                                         }
-                                        thread::sleep(Duration::from_millis(5));
+                                        if !click_flag.load(Ordering::Acquire) {
+                                            w.stop_and_reset();
+                                        }
                                     }
-                                    if !click_flag.load(Ordering::Acquire) {
+                                    Err(e) if e.code() == AUDCLNT_E_DEVICE_INVALIDATED => {
+                                        drop(wasapi.take());
+                                        if let Ok(new_w) = WasapiClicker::new() {
+                                            if new_w.play_click(&pcm).is_ok() {
+                                                played = true;
+                                            }
+                                            wasapi = Some(new_w);
+                                        }
+                                    }
+                                    Err(_) => {
                                         w.stop_and_reset();
                                     }
                                 }
-                            } else if let Some(ref wo) = wave_out {
-                                wo.play_click_blocking(&mut pcm);
+                            }
+                            if !played {
+                                if wave_out.is_none() {
+                                    wave_out = WaveOutClicker::new();
+                                }
+                                if let Some(ref wo) = wave_out {
+                                    wo.play_click_blocking(&mut pcm);
+                                }
                             }
                         }
                     } else {

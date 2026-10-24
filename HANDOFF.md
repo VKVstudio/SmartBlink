@@ -268,3 +268,16 @@ Read `AGENTS.md`, `.system/checkpoint.md`. Execute M12 (`ARCHITECTURE.md` §6).
 
 **Next agent**
 All 12 milestones (M1–M12) are complete. Await owner desktop verification and explicit approval before any `git push` or GitHub Release.
+
+## Session #017 — 2026-10-24 — Live user-feedback audit (15 skeptics) & comprehensive bugfix pass
+
+**Done**
+- Expanded `EN_CORPUS` and `RU_CORPUS` in `tools/profilegen/src/main.rs` (`google`, `youtube`, `telegram`, `github`, `discord`, `windows`, `капслок`, `мигнула`, `вроде`, `отметил`, `должно`, `происходить`, etc.) and regenerated `assets/profiles/*.bin`.
+- Updated `src/profile.rs`: added bigram backoff for unseen trigrams when constituent bigrams are strongly attested (`>= 15`), enabled high-confidence 3-letter word detection (`rfr`->"как", `xnj`->"что", `dct`->"все", `hfp`->"раз", `'nj`->"это"), fixed multi-punctuation stripping (`&/` -> `?.`, `dct?` -> `все,`), and removed false path immunity on trailing `/` (`.` on RU layout).
+- Updated `src/signal.rs` & `src/worker.rs`: prevented mid-word `CapsLockGuarded` case corruption (`цштвЩцы`) by increasing `CAPS_MIN_GAP_MS` to `350 ms`, using a single 25 ms pulse or blinking at `VK_SPACE` word boundary; fixed WASAPI `AUDCLNT_E_NOT_STOPPED` on rapid clicks and `AUDCLNT_E_DEVICE_INVALIDATED` on audio endpoint hotplug; increased `MAX_WORD_KEYS` to `256` with sliding oldest-word drop; eliminated per-keystroke UIA IPC calls when `last_verdict.is_none()`.
+- Updated `src/fix.rs`, `src/layout.rs`, `src/clipboard.rs`, `src/hooks.rs`, `src/settings.rs`, and `src/tray.rs`: fixed `expand_erroneous_burst_run` for 1–3 char words (`yt`->"не"), added `GetGUIThreadInfo` `hwndFocus` resolution and modifier release before `SendInput`, removed cross-thread `SpscRing::clear_and_zero()` race, and added a `"Test Alert Now"` button in Settings.
+
+**Verified**
+- `cargo test --release` → `test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s`.
+- `cargo build --release` → 0 warnings.
+- `ISCC.exe installer\SmartBlink.iss` → `target\installer\SmartBlink-Setup-1.0.0.exe`.

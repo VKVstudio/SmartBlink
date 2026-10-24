@@ -33,7 +33,7 @@ pub const LANG_ARMENIAN: u16 = 0x2B;
 pub const LANG_GEORGIAN: u16 = 0x37;
 pub const LANG_KAZAKH: u16 = 0x3F;
 
-pub const MIN_WORD_LEN: usize = 4;
+pub const MIN_WORD_LEN: usize = 3;
 pub const ABSOLUTE_THRESHOLD: i32 = 18;
 pub const MARGIN_THRESHOLD: i32 = 45;
 pub const CURRENT_MAX_PLAUSIBLE_SCORE: i32 = -5;
@@ -191,12 +191,23 @@ impl LanguageProfile {
         let key = ((a as u32) << 16) | ((b as u32) << 8) | (c as u32);
         match self.trigrams.binary_search_by_key(&key, |&(k, _)| k) {
             Ok(pos) => self.trigrams[pos].1 as i32,
-            Err(_) => self.default_trigram_score as i32,
+            Err(_) => {
+                // Bigram backoff: only when both constituent bigrams (a, b) and (b, c) are strongly
+                // attested (score >= 15) in this language, soften the missing-trigram penalty.
+                let bg1 = self.lookup_bigram(a, b);
+                let bg2 = self.lookup_bigram(b, c);
+                if bg1 >= 15 && bg2 >= 15 {
+                    -15
+                } else {
+                    self.default_trigram_score as i32
+                }
+            }
         }
     }
 
     /// Score a single rendered candidate token against this language profile.
     /// Returns a length-normalized score (roughly `-200..+100`).
+    /// Works on tokens of any length `>= 1` so manual fix / burst expansion can score short words too.
     pub fn score_word(&self, rendered: &str) -> i32 {
         let trimmed = rendered.trim();
         let mut chars: Vec<char> = trimmed
@@ -204,22 +215,38 @@ impl LanguageProfile {
             .flat_map(|c| c.to_lowercase())
             .collect();
 
-        if chars.len() < MIN_WORD_LEN {
+        if chars.is_empty() {
             return FLOOR_SCORE;
         }
 
-        // Allow stripping at most one trailing sentence punctuation mark if it is not in this alphabet
-        // (e.g. "hello," in EN), with a small penalty in case another layout maps that key to a letter.
-        let mut stripped_trailing_punct = false;
-        if let Some(&last_ch) = chars.last() {
-            if is_sentence_punct(last_ch) && self.char_index(last_ch).is_none() && chars.len() > MIN_WORD_LEN {
+        // Strip leading and trailing sentence punctuation marks that are not letters in this alphabet
+        // (e.g. "hello,", "привет?.", "все,"), with a small penalty in case another layout maps that key to a letter.
+        let mut stripped_punct_count = 0usize;
+        while let Some(&first_ch) = chars.first() {
+            if is_sentence_punct(first_ch) && self.char_index(first_ch).is_none() && chars.len() > 1 {
+                chars.remove(0);
+                stripped_punct_count += 1;
+            } else {
+                break;
+            }
+        }
+        while let Some(&last_ch) = chars.last() {
+            if is_sentence_punct(last_ch) && self.char_index(last_ch).is_none() && chars.len() > 1 {
                 chars.pop();
-                stripped_trailing_punct = true;
+                stripped_punct_count += 1;
+            } else {
+                break;
             }
         }
 
+        // Remove internal apostrophes when not part of this alphabet (e.g. English contractions "don't", "it's"),
+        // while keeping them if they ARE letters in the target alphabet (e.g. 'э' in RU was already mapped).
+        if self.char_index('\'').is_none() && chars.len() >= 3 {
+            chars.retain(|&c| c != '\'' && c != '’');
+        }
+
         let n = chars.len();
-        if n < MIN_WORD_LEN {
+        if n == 0 {
             return FLOOR_SCORE;
         }
 
@@ -296,12 +323,19 @@ impl LanguageProfile {
         if oov_count > 0 {
             total -= (oov_count as i32) * 85;
         }
-        if stripped_trailing_punct {
-            total -= 18;
+        if stripped_punct_count > 0 {
+            total -= (stripped_punct_count.min(2) as i32) * 14;
         }
         if vowel_count == 0 {
-            // A 4+ letter alphabetic word with zero vowels (e.g. "ghbdtn") is strongly implausible.
-            total -= (cap as i32) * 42;
+            if cap >= 3 {
+                // A 3+ letter alphabetic word with zero vowels (e.g. "ghbdtn", "rfr", "xnj") is strongly implausible.
+                total -= (cap as i32) * 42;
+            } else if cap == 2 {
+                total -= 55;
+            } else if cap == 1 && self.lookup_trigram(0, indices[1], 0) < 0 {
+                // Single consonant that is not a standalone 1-letter word in this language (e.g. "b", "d", "z" in EN).
+                total -= 65;
+            }
         }
         if max_consonant_run >= 5 {
             total -= ((max_consonant_run - 4) as i32) * 55;
@@ -320,17 +354,26 @@ impl LanguageProfile {
 
 #[inline]
 fn is_sentence_punct(ch: char) -> bool {
-    matches!(ch, '.' | ',' | '!' | '?' | ':' | ';')
+    matches!(
+        ch,
+        '.' | ',' | '!' | '?' | ':' | ';' | '"' | '\'' | '(' | ')' | '«' | '»'
+    )
 }
 
 /// Returns `true` if the token is immune from detection (URLs, paths, CLI flags, numbers, snake_case).
 pub fn is_immune_word(rendered: &str) -> bool {
-    if layout::is_immune_token(rendered) {
+    let trimmed = rendered.trim();
+    if layout::is_immune_token(trimmed) {
         return true;
     }
-    rendered
-        .chars()
-        .any(|c| c.is_ascii_digit() || c == '_' || c == '@' || c == '/' || c == '\\')
+    // Strip trailing punctuation before checking for path/code characters so a trailing '/'
+    // (which is '.' on the Russian layout!) does not falsely mark a sentence-ending word as a Unix path.
+    let core = trimmed.trim_end_matches(|c: char| !c.is_alphabetic() && !c.is_ascii_digit());
+    if core.is_empty() {
+        return false;
+    }
+    core.chars()
+        .any(|c| c.is_ascii_digit() || c == '_' || c == '@' || c == '\\')
 }
 
 /// Return all 20 parsed built-in `LanguageProfile` instances.
@@ -417,14 +460,27 @@ pub fn evaluate_tables(
         return None;
     }
 
+    let target_alpha_len = best_rendered.chars().filter(|c| c.is_alphabetic()).count();
+    if target_alpha_len < MIN_WORD_LEN {
+        return None;
+    }
+
     let margin_vs_current = best_score - current_score;
     let margin_vs_runner_up = best_score - runner_up_score;
     let margin = margin_vs_current.min(margin_vs_runner_up);
 
-    if current_score <= CURRENT_MAX_PLAUSIBLE_SCORE
-        && best_score >= ABSOLUTE_THRESHOLD
-        && margin >= MARGIN_THRESHOLD
-    {
+    let passes_gates = if target_alpha_len == 3 {
+        // Strict high-confidence gate for 3-letter words (e.g. "rfr"->"как", "xnj"->"что", "dct"->"все", "'nj"->"это"):
+        // must be strongly implausible in current layout and a high-frequency 3-letter word in target layout.
+        current_score <= -30 && best_score >= 34 && margin >= 80
+    } else {
+        (current_score <= CURRENT_MAX_PLAUSIBLE_SCORE
+            && best_score >= ABSOLUTE_THRESHOLD
+            && margin >= MARGIN_THRESHOLD)
+            || (current_score <= -55 && best_score >= 5 && margin >= 70)
+    };
+
+    if passes_gates {
         Some(DetectionVerdict {
             current_hkl,
             target_hkl: best_hkl,
@@ -445,7 +501,7 @@ pub fn evaluate_active_word(
     active_hkls: &[HKL],
     cache: &mut LayoutCache,
 ) -> Option<DetectionVerdict> {
-    if word_keys.len() < MIN_WORD_LEN || active_hkls.len() < 2 {
+    if word_keys.len() < MIN_WORD_LEN {
         return None;
     }
     for &hkl in active_hkls {
@@ -453,10 +509,18 @@ pub fn evaluate_active_word(
     }
     let _ = cache.get_or_build(current_hkl);
 
-    let tables: Vec<&LayoutLayerTable> = active_hkls
+    let mut tables: Vec<&LayoutLayerTable> = active_hkls
         .iter()
         .filter_map(|hkl| cache.get(*hkl))
         .collect();
+    if !tables.iter().any(|t| t.hkl == current_hkl) {
+        if let Some(cur_t) = cache.get(current_hkl) {
+            tables.push(cur_t);
+        }
+    }
+    if tables.len() < 2 {
+        return None;
+    }
     evaluate_tables(word_keys, current_hkl, &tables)
 }
 
@@ -470,6 +534,7 @@ mod tests {
 
     // Full standard US QWERTY and Russian ЙЦУКЕН scan-code tables for deterministic testing.
     const US_LAYOUT: &[(u8, char, char)] = &[
+        (0x08, '7', '&'),
         (0x10, 'q', 'Q'),
         (0x11, 'w', 'W'),
         (0x12, 'e', 'E'),
@@ -507,6 +572,7 @@ mod tests {
     ];
 
     const RU_LAYOUT: &[(u8, char, char)] = &[
+        (0x08, '7', '?'),
         (0x10, 'й', 'Й'),
         (0x11, 'ц', 'Ц'),
         (0x12, 'у', 'У'),
@@ -733,6 +799,11 @@ mod tests {
             "message",
             "keyboard",
             "windows",
+            "google",
+            "youtube",
+            "telegram",
+            "discord",
+            "github",
             "test",
         ] {
             let keys = type_on_layout(intended_en, US_LAYOUT);
@@ -742,6 +813,62 @@ mod tests {
             assert_eq!(verdict.rendered_target, intended_en);
             assert!(verdict.best_score >= ABSOLUTE_THRESHOLD);
             assert!(verdict.margin >= MARGIN_THRESHOLD);
+        }
+    }
+
+    #[test]
+    fn real_user_feedback_words_and_punctuated_russian_tokens_detected() {
+        let (us, ru) = make_tables();
+        let tables = [&us, &ru];
+
+        // Exact words from user's live feedback sentence typed on US layout while intending RU:
+        for &(garbled_us, expected_ru) in &[
+            ("ghbdtn", "привет"),
+            ("yfthyjt", "наерное"), // real user typo in "наверное"
+            ("hf,jnftn?", "работает,"),
+            ("rfgckjr", "капслок"),
+            ("dhjlt", "вроде"),
+            ("rfr", "как"),
+            ("vbufyekf", "миганула"),
+            ("jlby", "один"),
+            ("hfp", "раз"),
+            ("dct?", "все,"),
+            ("rjulf", "когда"),
+            ("yfcnhjqrf[", "настройках"),
+            ("jnvtnbk?", "отметил,"),
+            ("'nj", "это"),
+            ("djj,ot", "вообще"),
+            ("xnj", "что"),
+            ("nfrjt&", "такое?"),
+            ("ljk;yj", "должно"),
+            ("ghjbc[jlbnm&/", "происходить?."),
+        ] {
+            let keys = type_on_layout(garbled_us, US_LAYOUT);
+            let verdict = evaluate_tables(&keys, US_HKL, &tables).unwrap_or_else(|| {
+                panic!(
+                    "expected RU detection for garbled {:?} -> {:?}",
+                    garbled_us, expected_ru
+                )
+            });
+            assert_eq!(verdict.target_hkl, RU_HKL);
+            assert_eq!(verdict.rendered_target, expected_ru);
+        }
+
+        // Exact words from user's live feedback typed on RU layout while intending EN:
+        for &(garbled_ru, expected_en) in &[
+            ("цштвщцы", "windows"),
+            ("цштвЩцы", "windOws"),
+            ("пщщпду", "google"),
+        ] {
+            let keys = type_on_layout(garbled_ru, RU_LAYOUT);
+            let verdict = evaluate_tables(&keys, RU_HKL, &tables).unwrap_or_else(|| {
+                panic!(
+                    "expected EN detection for garbled {:?} -> {:?}",
+                    garbled_ru, expected_en
+                )
+            });
+            assert_eq!(verdict.target_hkl, US_HKL);
+            assert_eq!(verdict.rendered_target, expected_en);
         }
     }
 

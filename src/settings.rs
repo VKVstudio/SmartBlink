@@ -4,6 +4,7 @@
 use crate::autostart;
 use crate::config::{self, Config, FixTrigger, LedMode, NotifyMode};
 use crate::hooks;
+use crate::signal;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
@@ -29,6 +30,17 @@ const IDC_BTN_AUTOSTART: i32 = 1005;
 const IDC_BTN_ELEVATED_TASK: i32 = 1006;
 const IDC_BTN_OPEN_CONFIG: i32 = 1007;
 const IDC_BTN_CLOSE: i32 = 1008;
+const IDC_BTN_TEST_ALERT: i32 = 1009;
+
+/// Refresh the Settings window controls if the window is currently open.
+pub fn refresh_if_open() {
+    unsafe {
+        let existing = HWND(SETTINGS_HWND.load(Ordering::Acquire) as *mut _);
+        if !existing.0.is_null() && IsWindow(existing).as_bool() {
+            refresh_controls(existing);
+        }
+    }
+}
 
 /// Open or bring to foreground the Win32 Settings window.
 pub fn show_settings_window() {
@@ -58,8 +70,8 @@ pub fn show_settings_window() {
             let _ = RegisterClassW(&wc);
         });
 
-        let wnd_w = 620;
-        let wnd_h = 430;
+        let wnd_w = 680;
+        let wnd_h = 520;
         let screen_w = GetSystemMetrics(SM_CXSCREEN);
         let screen_h = GetSystemMetrics(SM_CYSCREEN);
         let pos_x = ((screen_w - wnd_w) / 2).max(40);
@@ -123,8 +135,8 @@ pub fn format_notify_button(mode: NotifyMode) -> String {
 
 pub fn format_led_button(mode: LedMode) -> String {
     let label = match mode {
-        LedMode::ScrollLock => "Scroll Lock (Safe Default)",
-        LedMode::CapsLockGuarded => "Caps Lock (Guarded >= 80 ms gap)",
+        LedMode::ScrollLock => "Scroll Lock (Desktop keyboards with Scroll Lock LED)",
+        LedMode::CapsLockGuarded => "Caps Lock (Laptops — safe 25 ms blink at word end)",
     };
     format!("LED Channel:  {label}")
 }
@@ -205,6 +217,10 @@ unsafe extern "system" fn settings_wnd_proc(
                         SW_SHOWNORMAL,
                     );
                 }
+                IDC_BTN_TEST_ALERT => {
+                    let cfg = config::get_runtime_config();
+                    signal::trigger_test_alert(cfg.notify_mode, cfg.led_mode);
+                }
                 IDC_BTN_CLOSE => {
                     let _ = DestroyWindow(hwnd);
                 }
@@ -239,7 +255,7 @@ unsafe fn create_controls(hwnd: HWND) {
             WS_CHILD | WS_VISIBLE | style,
             24,
             y,
-            556,
+            616,
             h,
             hwnd,
             HMENU(id as isize as *mut _),
@@ -250,25 +266,33 @@ unsafe fn create_controls(hwnd: HWND) {
         }
     };
 
-    add_child(w!("STATIC"), w!(""), WINDOW_STYLE(0), 18, 48, IDC_STATUS_LABEL);
-    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 76, 40, IDC_BTN_NOTIFY);
-    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 126, 40, IDC_BTN_LED);
-    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 176, 40, IDC_BTN_FIX);
-    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 226, 40, IDC_BTN_AUTOSTART);
+    add_child(w!("STATIC"), w!(""), WINDOW_STYLE(0), 16, 68, IDC_STATUS_LABEL);
+    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 94, 42, IDC_BTN_NOTIFY);
+    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 144, 42, IDC_BTN_LED);
+    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 194, 42, IDC_BTN_FIX);
+    add_child(
+        w!("BUTTON"),
+        w!("Test Alert Now  (Play Audio Click + Blink Keyboard LED)"),
+        WS_TABSTOP,
+        244,
+        42,
+        IDC_BTN_TEST_ALERT,
+    );
+    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 294, 42, IDC_BTN_AUTOSTART);
     add_child(
         w!("BUTTON"),
         w!(""),
         WS_TABSTOP,
-        276,
-        40,
+        344,
+        42,
         IDC_BTN_ELEVATED_TASK,
     );
     add_child(
         w!("BUTTON"),
         w!("Open config.toml in Editor"),
         WS_TABSTOP,
-        330,
-        38,
+        400,
+        40,
         IDC_BTN_OPEN_CONFIG,
     );
 }
@@ -281,12 +305,12 @@ unsafe fn refresh_controls(hwnd: HWND) {
     let task_registered = autostart::is_elevated_task_registered();
 
     let status_text = format!(
-        "Engine: {}   |   Selection Hotkey: Ctrl+Alt+Z\r\nPrivilege: {}   |   Exclusions: {} apps",
+        "Engine: {}   |   Fix Last Word: Double Left Shift   |   Convert Selection: Ctrl+Alt+Z\r\nPrivilege: {}   |   Exclusions: {} apps\r\nTip: On laptops without Scroll Lock, choose 'Caps Lock' in LED Channel below.",
         if paused { "Paused" } else { "Active" },
         if elevated {
             "Elevated (Admin / UIPI active)"
         } else {
-            "Standard user (not running elevated)"
+            "Standard user"
         },
         cfg.blacklist.len()
     );

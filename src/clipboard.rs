@@ -373,9 +373,26 @@ pub fn convert_selection_text(
             if src.hkl == dst.hkl {
                 continue;
             }
-            let (converted, mapped_count, unmapped_alpha_count) = src.convert_str_to(text, dst);
-            if mapped_count == 0 || unmapped_alpha_count > 0 || converted == text {
+            let Some(dst_profile) = profile::profile_for_primary_lang(dst.primary_lang) else {
                 continue;
+            };
+            let (converted, mapped_count, unmapped_alpha_count) = src.convert_str_to(text, dst);
+            if mapped_count == 0 || converted == text {
+                continue;
+            }
+            if unmapped_alpha_count > 0 {
+                // Only allow unmapped alphabetic characters if they already belong to `dst`'s alphabet
+                // (e.g. mixed selection "Привет ghbdtn"), never when they belong to a 3rd layout like DE "größe".
+                let all_unmapped_in_dst = text.chars().all(|ch| {
+                    !ch.is_alphabetic()
+                        || src.find_char(ch).is_some()
+                        || ch
+                            .to_lowercase()
+                            .all(|lc| dst_profile.char_index(lc).is_some())
+                });
+                if !all_unmapped_in_dst {
+                    continue;
+                }
             }
 
             let involves_current = dst.hkl == current_hkl || src.hkl == current_hkl;
@@ -394,10 +411,6 @@ pub fn convert_selection_text(
                     }
                 }
             }
-
-            let Some(dst_profile) = profile::profile_for_primary_lang(dst.primary_lang) else {
-                continue;
-            };
 
             let src_score = match src_profile {
                 Some(sp) => score_phrase(&text, sp),
@@ -564,7 +577,8 @@ pub fn convert_selection_in_window(
     let seq_before = unsafe { GetClipboardSequenceNumber() };
     send_synthetic_ctrl_c()?;
 
-    for _ in 0..12 {
+    // Wait up to 200 ms (40 * 5 ms) for the target app (including Electron/Chromium) to update clipboard.
+    for _ in 0..40 {
         let seq_now = unsafe { GetClipboardSequenceNumber() };
         if seq_now != seq_before {
             break;
@@ -577,18 +591,27 @@ pub fn convert_selection_in_window(
         return Ok(false);
     };
 
-    let tables: Vec<&LayoutLayerTable> = active_hkls
+    let mut tables: Vec<&LayoutLayerTable> = active_hkls
         .iter()
         .filter_map(|hkl| cache.get(*hkl))
         .collect();
+    if !tables.iter().any(|t| t.hkl == current_hkl) {
+        if let Some(cur_t) = cache.get(current_hkl) {
+            tables.push(cur_t);
+        }
+    }
     let Some((converted_text, target_hkl)) =
         convert_selection_text(&selected_text, current_hkl, &tables)
     else {
         return Ok(false);
     };
 
-    // 4. Replace active selection directly via KEYEVENTF_UNICODE (0 backspaces since selection is highlighted).
-    let inputs = fix::build_fix_inputs(0, &converted_text);
+    // Normalize CRLF -> LF so KEYEVENTF_UNICODE does not inject duplicate Enter strokes on multiline text.
+    let normalized_text = converted_text.replace("\r\n", "\n");
+
+    // 4. Release any held Ctrl/Alt/Shift modifiers and replace active selection via KEYEVENTF_UNICODE.
+    let mut inputs = fix::build_modifier_up_inputs();
+    inputs.extend(fix::build_unicode_inputs(&normalized_text));
     hooks::begin_suppression();
     let send_res = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
     hooks::end_suppression();
@@ -604,14 +627,19 @@ pub fn convert_selection_in_window(
 
 fn send_synthetic_ctrl_c() -> windows::core::Result<()> {
     let inputs = [
-        // Release Alt temporarily so the target window receives clean Ctrl+C, not Ctrl+Alt+C.
+        // Release Alt and Shift temporarily so the target window receives clean Ctrl+C, not Ctrl+Alt+C.
         vk_input(VK_LMENU, true),
         vk_input(VK_RMENU, true),
         vk_input(VK_MENU, true),
+        vk_input(VK_LSHIFT, true),
+        vk_input(VK_RSHIFT, true),
+        vk_input(VK_SHIFT, true),
+        vk_input(VK_RCONTROL, true),
         vk_input(VK_LCONTROL, false),
         vk_input(VK_C, false),
         vk_input(VK_C, true),
         vk_input(VK_LCONTROL, true),
+        vk_input(VK_CONTROL, true),
     ];
     hooks::begin_suppression();
     let sent = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };

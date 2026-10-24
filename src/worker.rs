@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-pub const MAX_WORD_KEYS: usize = 64;
+pub const MAX_WORD_KEYS: usize = 256;
 pub const IDLE_RESET_MS: u32 = 3500;
 const WORKER_TICK_MS: u64 = 33; // ~30 Hz
 
@@ -81,7 +81,8 @@ pub struct WordBuffer {
     slots: [KeyStrokeSlot; MAX_WORD_KEYS],
     len: usize,
     last_tick: Option<u32>,
-    shift_down: bool,
+    lshift_down: bool,
+    rshift_down: bool,
     ctrl_down: bool,
     alt_down: bool,
     win_down: bool,
@@ -105,7 +106,8 @@ impl WordBuffer {
             slots: [KeyStrokeSlot::zeroed(); MAX_WORD_KEYS],
             len: 0,
             last_tick: None,
-            shift_down: false,
+            lshift_down: false,
+            rshift_down: false,
             ctrl_down: false,
             alt_down: false,
             win_down: false,
@@ -121,6 +123,35 @@ impl WordBuffer {
         }
         self.len = 0;
         self.last_tick = None;
+    }
+
+    /// Clear tracked modifier flags (called on focus change, mouse click, or synthetic injection).
+    pub fn clear_modifiers(&mut self) {
+        self.lshift_down = false;
+        self.rshift_down = false;
+        self.ctrl_down = false;
+        self.alt_down = false;
+        self.win_down = false;
+    }
+
+    /// Drop the oldest word (up to the first `VK_SPACE`) so a long multi-word sentence never wipes
+    /// the current word mid-typing when `MAX_WORD_KEYS` is reached.
+    fn drop_oldest_word_or_reset(&mut self) {
+        if let Some(space_pos) = self.slots[..self.len].iter().position(|s| s.vk == VK_SPACE) {
+            let drop_count = (space_pos + 1).min(self.len);
+            let new_len = self.len - drop_count;
+            for i in 0..new_len {
+                self.slots[i] = self.slots[i + drop_count];
+            }
+            for i in new_len..self.len {
+                unsafe {
+                    ptr::write_volatile(&mut self.slots[i], KeyStrokeSlot::zeroed());
+                }
+            }
+            self.len = new_len;
+        } else {
+            self.reset();
+        }
     }
 
     #[allow(dead_code)]
@@ -144,18 +175,36 @@ impl WordBuffer {
             InputKind::Empty => {}
             InputKind::MouseClick => {
                 self.reset();
+                self.clear_modifiers();
             }
             InputKind::KeyUp => {
-                if is_shift_vk(rec.vk) {
-                    self.shift_down = false;
-                } else {
-                    self.update_modifier(rec.vk, false);
+                match rec.vk {
+                    VK_LSHIFT => self.lshift_down = false,
+                    VK_RSHIFT => self.rshift_down = false,
+                    VK_SHIFT => {
+                        self.lshift_down = false;
+                        self.rshift_down = false;
+                    }
+                    _ => {
+                        self.update_modifier(rec.vk, false);
+                    }
                 }
             }
             InputKind::KeyDown => {
-                if is_shift_vk(rec.vk) {
-                    self.shift_down = true;
-                    return;
+                match rec.vk {
+                    VK_LSHIFT => {
+                        self.lshift_down = true;
+                        return;
+                    }
+                    VK_RSHIFT => {
+                        self.rshift_down = true;
+                        return;
+                    }
+                    VK_SHIFT => {
+                        self.lshift_down = true;
+                        return;
+                    }
+                    _ => {}
                 }
                 if self.update_modifier(rec.vk, true) {
                     // Pressing Ctrl, Alt, or Win resets the active word buffer.
@@ -168,6 +217,14 @@ impl WordBuffer {
                     return;
                 }
 
+                // Idle timeout check before checking stuck modifiers or recording.
+                if let Some(prev) = self.last_tick {
+                    if rec.ms_tick.wrapping_sub(prev) > IDLE_RESET_MS {
+                        self.reset();
+                        self.clear_modifiers();
+                    }
+                }
+
                 // Any chord while Ctrl, Alt, or Win is held resets and stays ignored.
                 if self.ctrl_down || self.alt_down || self.win_down {
                     self.reset();
@@ -178,13 +235,6 @@ impl WordBuffer {
                 if is_navigation_or_reset_vk(rec.vk) {
                     self.reset();
                     return;
-                }
-
-                // Idle timeout check before recording or backspacing.
-                if let Some(prev) = self.last_tick {
-                    if rec.ms_tick.wrapping_sub(prev) > IDLE_RESET_MS {
-                        self.reset();
-                    }
                 }
 
                 if rec.vk == VK_BACK {
@@ -200,16 +250,16 @@ impl WordBuffer {
                     return;
                 }
 
-                // Append to word buffer; if capacity is reached, reset to avoid stale partial tokens.
+                // Append to word buffer; if capacity is reached, drop oldest word so current sentence continues.
                 if self.len >= MAX_WORD_KEYS {
-                    self.reset();
+                    self.drop_oldest_word_or_reset();
                 }
                 self.slots[self.len] = KeyStrokeSlot {
                     vk: rec.vk,
                     scan_code: rec.scan_code,
                     flags: rec.flags,
                     ms_tick: rec.ms_tick,
-                    shift: self.shift_down,
+                    shift: self.lshift_down || self.rshift_down,
                 };
                 self.len += 1;
                 self.last_tick = Some(rec.ms_tick);
@@ -235,10 +285,6 @@ impl WordBuffer {
             _ => false,
         }
     }
-}
-
-fn is_shift_vk(vk: u16) -> bool {
-    matches!(vk, VK_SHIFT | VK_LSHIFT | VK_RSHIFT)
 }
 
 fn is_ctrl_vk(vk: u16) -> bool {
@@ -315,7 +361,7 @@ pub fn start(
             let mut selection_detector = SelectionHotkeyDetector::new();
             let mut whitelist = SessionWhitelist::new();
             let mut layout_cache = LayoutCache::new();
-            let active_hkls = layout::active_layouts();
+            let mut active_hkls = layout::active_layouts();
             for &hkl in &active_hkls {
                 let _ = layout_cache.get_or_build(hkl);
             }
@@ -343,6 +389,7 @@ pub fn start(
                     if !word_buf.is_empty() {
                         word_buf.reset();
                     }
+                    word_buf.clear_modifiers();
                     zero_and_clear_vec(&mut ctrl_snapshot);
                     fix_detector.reset();
                     selection_detector.reset();
@@ -360,9 +407,19 @@ pub fn start(
 
                 let status = focus.update(&blacklist);
                 if status.hwnd_changed || status.is_immune {
+                    if status.hwnd_changed {
+                        let refreshed = layout::active_layouts();
+                        if !refreshed.is_empty() {
+                            for &hkl in &refreshed {
+                                let _ = layout_cache.get_or_build(hkl);
+                            }
+                            active_hkls = refreshed;
+                        }
+                    }
                     if !word_buf.is_empty() {
                         word_buf.reset();
                     }
+                    word_buf.clear_modifiers();
                     zero_and_clear_vec(&mut ctrl_snapshot);
                     fix_detector.reset();
                     selection_detector.reset();
@@ -402,8 +459,16 @@ pub fn start(
                                 whitelist.record_ignored_word(&rendered, cur_hkl);
                             }
                         }
+                        if pending_caps_blink
+                            && signal.led_mode() == LedMode::CapsLockGuarded
+                            && !focus.refresh_password_immunity()
+                        {
+                            // Word boundary reached: safe to emit the single 25 ms Caps Lock pulse.
+                            signal.trigger_blink();
+                        }
                         word_alerted = false;
                         word_blinked = false;
+                        pending_caps_blink = false;
                         last_verdict = None;
                     }
 
@@ -434,6 +499,8 @@ pub fn start(
                             &mut layout_cache,
                         );
                         word_buf.reset();
+                        word_buf.clear_modifiers();
+                        selection_detector.reset();
                         zero_and_clear_vec(&mut ctrl_snapshot);
                         last_verdict = None;
                         word_blinked = false;
@@ -461,6 +528,8 @@ pub fn start(
                             let _ = fix::execute_fix(&plan, hwnd);
                         }
                         word_buf.reset();
+                        word_buf.clear_modifiers();
+                        selection_detector.reset();
                         zero_and_clear_vec(&mut ctrl_snapshot);
                         last_verdict = None;
                         word_blinked = false;
@@ -504,23 +573,25 @@ pub fn start(
                                 &mut layout_cache,
                             );
                         }
-                        if last_verdict.is_some() && !focus.refresh_password_immunity() {
-                            word_alerted = true;
-                            signal.trigger_click();
-                            if !word_blinked {
-                                if signal.led_mode() == LedMode::ScrollLock {
-                                    signal.trigger_blink();
-                                    word_blinked = true;
-                                } else {
-                                    pending_caps_blink = true;
+                        if last_verdict.is_some() {
+                            if focus.refresh_password_immunity() {
+                                word_buf.reset();
+                                last_verdict = None;
+                                word_blinked = false;
+                                pending_caps_blink = false;
+                                word_alerted = false;
+                            } else {
+                                word_alerted = true;
+                                signal.trigger_click();
+                                if !word_blinked {
+                                    if signal.led_mode() == LedMode::ScrollLock {
+                                        signal.trigger_blink();
+                                        word_blinked = true;
+                                    } else {
+                                        pending_caps_blink = true;
+                                    }
                                 }
                             }
-                        } else if focus.refresh_password_immunity() {
-                            word_buf.reset();
-                            last_verdict = None;
-                            word_blinked = false;
-                            pending_caps_blink = false;
-                            word_alerted = false;
                         }
                     } else {
                         last_verdict = None;

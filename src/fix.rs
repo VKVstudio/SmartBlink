@@ -32,8 +32,13 @@ const VK_CONTROL: u16 = 0x11;
 const VK_PAUSE: u16 = 0x13;
 const VK_SPACE: u16 = 0x20;
 const VK_LSHIFT: u16 = 0xA0;
+const VK_RSHIFT: u16 = 0xA1;
 const VK_LCONTROL: u16 = 0xA2;
+const VK_RCONTROL: u16 = 0xA3;
+const VK_LMENU: u16 = 0xA4;
+const VK_RMENU: u16 = 0xA5;
 const SCAN_LSHIFT: u16 = 0x2A;
+const INPUTLANGCHANGE_SYSCHARSET: usize = 0x0001;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FixPlan {
@@ -283,16 +288,9 @@ fn expand_erroneous_burst_run<'a>(
             break;
         };
 
-        let char_len = cur_str.chars().count();
-        let is_also_wrong_layout = if char_len >= profile::MIN_WORD_LEN {
-            let cur_s = cur_prof.map(|p| p.score_word(&cur_str)).unwrap_or(0);
-            let dst_s = dst_prof.map(|p| p.score_word(&dst_str)).unwrap_or(0);
-            cur_s <= profile::CURRENT_MAX_PLAUSIBLE_SCORE && dst_s > cur_s
-        } else {
-            // Short 1..3-char word (e.g. "yt" -> "не", "b" -> "и", "d" -> "в"): include only if
-            // there is another wrong-layout word before it in the same burst.
-            word_start > 0
-        };
+        let cur_s = cur_prof.map(|p| p.score_word(&cur_str)).unwrap_or(0);
+        let dst_s = dst_prof.map(|p| p.score_word(&dst_str)).unwrap_or(0);
+        let is_also_wrong_layout = cur_s <= profile::CURRENT_MAX_PLAUSIBLE_SCORE && dst_s > cur_s;
 
         if is_also_wrong_layout {
             start_idx = word_start;
@@ -311,26 +309,54 @@ pub fn plan_word_fix_cached(
     active_hkls: &[HKL],
     cache: &mut LayoutCache,
 ) -> Option<FixPlan> {
-    if active_hkls.len() < 2 {
-        return None;
-    }
     for &hkl in active_hkls {
         let _ = cache.get_or_build(hkl);
     }
     let _ = cache.get_or_build(current_hkl);
-    let tables: Vec<&LayoutLayerTable> = active_hkls
+    let mut tables: Vec<&LayoutLayerTable> = active_hkls
         .iter()
         .filter_map(|hkl| cache.get(*hkl))
         .collect();
+    if !tables.iter().any(|t| t.hkl == current_hkl) {
+        if let Some(cur_t) = cache.get(current_hkl) {
+            tables.push(cur_t);
+        }
+    }
+    if tables.len() < 2 {
+        return None;
+    }
     plan_word_fix(word_buf_slots, current_hkl, &tables)
 }
 
-/// Build the exact `SendInput` sequence: `backspace_count` `VK_BACK` key taps followed by
-/// `KEYEVENTF_UNICODE` UTF-16 code units for `replacement_text`.
-pub fn build_fix_inputs(backspace_count: usize, replacement_text: &str) -> Vec<INPUT> {
-    let utf16_len = replacement_text.encode_utf16().count();
-    let mut inputs = Vec::with_capacity((backspace_count + utf16_len) * 2);
+pub fn build_modifier_up_inputs() -> Vec<INPUT> {
+    const MODIFIER_VKS: &[u16] = &[
+        VK_LSHIFT,
+        VK_RSHIFT,
+        VK_LCONTROL,
+        VK_RCONTROL,
+        VK_LMENU,
+        VK_RMENU,
+    ];
+    let mut inputs = Vec::with_capacity(MODIFIER_VKS.len());
+    for &vk in MODIFIER_VKS {
+        inputs.push(INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(vk),
+                    wScan: 0,
+                    dwFlags: KEYEVENTF_KEYUP,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        });
+    }
+    inputs
+}
 
+pub fn build_backspace_inputs(backspace_count: usize) -> Vec<INPUT> {
+    let mut inputs = Vec::with_capacity(backspace_count * 2);
     for _ in 0..backspace_count {
         inputs.push(INPUT {
             r#type: INPUT_KEYBOARD,
@@ -357,7 +383,12 @@ pub fn build_fix_inputs(backspace_count: usize, replacement_text: &str) -> Vec<I
             },
         });
     }
+    inputs
+}
 
+pub fn build_unicode_inputs(replacement_text: &str) -> Vec<INPUT> {
+    let utf16_len = replacement_text.encode_utf16().count();
+    let mut inputs = Vec::with_capacity(utf16_len * 2);
     for unit in replacement_text.encode_utf16() {
         inputs.push(INPUT {
             r#type: INPUT_KEYBOARD,
@@ -384,39 +415,77 @@ pub fn build_fix_inputs(backspace_count: usize, replacement_text: &str) -> Vec<I
             },
         });
     }
-
     inputs
 }
 
-/// Request keyboard layout switch in the target window and current thread (`ARCHITECTURE.md` §3.1).
+/// Build the exact `SendInput` sequence: `backspace_count` `VK_BACK` key taps followed by
+/// `KEYEVENTF_UNICODE` UTF-16 code units for `replacement_text`.
+pub fn build_fix_inputs(backspace_count: usize, replacement_text: &str) -> Vec<INPUT> {
+    let mut inputs = build_backspace_inputs(backspace_count);
+    inputs.extend(build_unicode_inputs(replacement_text));
+    inputs
+}
+
+/// Request keyboard layout switch in the focused target control and top-level window (`ARCHITECTURE.md` §3.1).
 pub fn switch_window_layout(hwnd: HWND, target_hkl: HKL) {
+    let (focused_hwnd, _) = layout::focused_window_and_thread(hwnd);
     unsafe {
         let _ = ActivateKeyboardLayout(target_hkl, ACTIVATE_KEYBOARD_LAYOUT_FLAGS(0));
-        if !hwnd.0.is_null() {
+        if !focused_hwnd.0.is_null() {
+            let _ = PostMessageW(
+                focused_hwnd,
+                WM_INPUTLANGCHANGEREQUEST,
+                WPARAM(INPUTLANGCHANGE_SYSCHARSET),
+                LPARAM(target_hkl.0 as isize),
+            );
+        }
+        if focused_hwnd != hwnd && !hwnd.0.is_null() {
             let _ = PostMessageW(
                 hwnd,
                 WM_INPUTLANGCHANGEREQUEST,
-                WPARAM(0),
+                WPARAM(INPUTLANGCHANGE_SYSCHARSET),
                 LPARAM(target_hkl.0 as isize),
             );
         }
     }
 }
 
-/// Execute a `FixPlan`: inject backspaces + `KEYEVENTF_UNICODE` characters inside a hook
-/// suppression window and switch the focused window to `plan.target_hkl`.
+/// Execute a `FixPlan`: release lingering modifiers, inject backspaces, yield briefly,
+/// inject `KEYEVENTF_UNICODE` replacement characters, and switch the focused window to `plan.target_hkl`.
 pub fn execute_fix(plan: &FixPlan, target_hwnd: HWND) -> bool {
-    let inputs = build_fix_inputs(plan.backspace_count, &plan.replacement_text);
-    if inputs.is_empty() {
+    if plan.backspace_count == 0 && plan.replacement_text.is_empty() {
         return false;
     }
 
     hooks::begin_suppression();
-    let sent = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
+
+    // 1. Release any lingering Shift/Ctrl/Alt modifiers so VK_BACK never triggers Ctrl+Backspace (delete whole word).
+    let mod_ups = build_modifier_up_inputs();
+    unsafe { SendInput(&mod_ups, size_of::<INPUT>() as i32) };
+
+    // 2. Send backspaces first and yield 5 ms so Chromium/Electron/RichEdit settles caret state.
+    if plan.backspace_count > 0 {
+        let bs_inputs = build_backspace_inputs(plan.backspace_count);
+        let sent = unsafe { SendInput(&bs_inputs, size_of::<INPUT>() as i32) };
+        if sent != bs_inputs.len() as u32 {
+            hooks::end_suppression();
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    // 3. Inject replacement UTF-16 units via KEYEVENTF_UNICODE.
+    let mut ok = true;
+    if !plan.replacement_text.is_empty() {
+        let text_inputs = build_unicode_inputs(&plan.replacement_text);
+        let sent = unsafe { SendInput(&text_inputs, size_of::<INPUT>() as i32) };
+        ok = sent == text_inputs.len() as u32;
+    }
+
     hooks::end_suppression();
 
     switch_window_layout(target_hwnd, plan.target_hkl);
-    sent == inputs.len() as u32
+    ok
 }
 
 #[cfg(test)]
@@ -525,5 +594,140 @@ mod tests {
             assert_eq!(inputs[14].Anonymous.ki.wScan, 'П' as u16);
             assert_eq!(inputs[14].Anonymous.ki.dwFlags, KEYEVENTF_UNICODE);
         }
+    }
+
+    #[test]
+    fn plan_word_fix_expands_multiword_burst_with_short_words_and_preserves_valid_prefix() {
+        const FULL_US: &[(u8, char, char)] = &[
+            (0x08, '7', '&'),
+            (0x10, 'q', 'Q'),
+            (0x11, 'w', 'W'),
+            (0x12, 'e', 'E'),
+            (0x13, 'r', 'R'),
+            (0x14, 't', 'T'),
+            (0x15, 'y', 'Y'),
+            (0x16, 'u', 'U'),
+            (0x17, 'i', 'I'),
+            (0x18, 'o', 'O'),
+            (0x19, 'p', 'P'),
+            (0x1A, '[', '{'),
+            (0x1B, ']', '}'),
+            (0x1E, 'a', 'A'),
+            (0x1F, 's', 'S'),
+            (0x20, 'd', 'D'),
+            (0x21, 'f', 'F'),
+            (0x22, 'g', 'G'),
+            (0x23, 'h', 'H'),
+            (0x24, 'j', 'J'),
+            (0x25, 'k', 'K'),
+            (0x26, 'l', 'L'),
+            (0x27, ';', ':'),
+            (0x28, '\'', '"'),
+            (0x2C, 'z', 'Z'),
+            (0x2D, 'x', 'X'),
+            (0x2E, 'c', 'C'),
+            (0x2F, 'v', 'V'),
+            (0x30, 'b', 'B'),
+            (0x31, 'n', 'N'),
+            (0x32, 'm', 'M'),
+            (0x33, ',', '<'),
+            (0x34, '.', '>'),
+            (0x35, '/', '?'),
+        ];
+        const FULL_RU: &[(u8, char, char)] = &[
+            (0x08, '7', '?'),
+            (0x10, 'й', 'Й'),
+            (0x11, 'ц', 'Ц'),
+            (0x12, 'у', 'У'),
+            (0x13, 'к', 'К'),
+            (0x14, 'е', 'Е'),
+            (0x15, 'н', 'Н'),
+            (0x16, 'г', 'Г'),
+            (0x17, 'ш', 'Ш'),
+            (0x18, 'щ', 'Щ'),
+            (0x19, 'з', 'З'),
+            (0x1A, 'х', 'Х'),
+            (0x1B, 'ъ', 'Ъ'),
+            (0x1E, 'ф', 'Ф'),
+            (0x1F, 'ы', 'Ы'),
+            (0x20, 'в', 'В'),
+            (0x21, 'а', 'А'),
+            (0x22, 'п', 'П'),
+            (0x23, 'р', 'Р'),
+            (0x24, 'о', 'О'),
+            (0x25, 'л', 'Л'),
+            (0x26, 'д', 'Д'),
+            (0x27, 'ж', 'Ж'),
+            (0x28, 'э', 'Э'),
+            (0x2C, 'я', 'Я'),
+            (0x2D, 'ч', 'Ч'),
+            (0x2E, 'с', 'С'),
+            (0x2F, 'м', 'М'),
+            (0x30, 'и', 'И'),
+            (0x31, 'т', 'Т'),
+            (0x32, 'ь', 'Ь'),
+            (0x33, 'б', 'Б'),
+            (0x34, 'ю', 'Ю'),
+            (0x35, '.', ','),
+        ];
+
+        let us = LayoutLayerTable::from_pairs(US_HKL, FULL_US);
+        let ru = LayoutLayerTable::from_pairs(RU_HKL, FULL_RU);
+        let tables = [&us, &ru];
+
+        let type_str = |s: &str, pairs: &[(u8, char, char)]| -> Vec<KeyStrokeSlot> {
+            s.chars()
+                .enumerate()
+                .map(|(i, ch)| {
+                    if ch == ' ' {
+                        KeyStrokeSlot {
+                            vk: VK_SPACE,
+                            scan_code: 0x39,
+                            flags: 0,
+                            ms_tick: (i as u32) * 30,
+                            shift: false,
+                        }
+                    } else {
+                        let (sc, shift) = pairs
+                            .iter()
+                            .find_map(|&(sc, b, sh)| {
+                                if ch == b {
+                                    Some((sc, false))
+                                } else if ch == sh {
+                                    Some((sc, true))
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap();
+                        KeyStrokeSlot {
+                            vk: 0x41,
+                            scan_code: sc as u16,
+                            flags: 0,
+                            ms_tick: (i as u32) * 30,
+                            shift,
+                        }
+                    }
+                })
+                .collect()
+        };
+
+        // 1. Full wrong-layout burst with 2-letter word "yt" ("не") and trailing "?":
+        let burst1 = type_str("ghbdtn yfthyjt yt hf,jnftn?", FULL_US);
+        let plan1 = plan_word_fix(&burst1, US_HKL, &tables).expect("plan1");
+        assert_eq!(plan1.original_text, "ghbdtn yfthyjt yt hf,jnftn?");
+        assert_eq!(plan1.replacement_text, "привет наерное не работает,");
+
+        // 2. Burst starting with 3-letter word "xnj" ("что") and ending with double punctuation "&/":
+        let burst2 = type_str("xnj ljk;yj ghjbc[jlbnm&/", FULL_US);
+        let plan2 = plan_word_fix(&burst2, US_HKL, &tables).expect("plan2");
+        assert_eq!(plan2.original_text, "xnj ljk;yj ghjbc[jlbnm&/");
+        assert_eq!(plan2.replacement_text, "что должно происходить?.");
+
+        // 3. Valid English prefix "Hello to " before "ghbdtn" must NOT corrupt "to":
+        let burst3 = type_str("Hello to ghbdtn", FULL_US);
+        let plan3 = plan_word_fix(&burst3, US_HKL, &tables).expect("plan3");
+        assert_eq!(plan3.original_text, "ghbdtn");
+        assert_eq!(plan3.replacement_text, "привет");
     }
 }

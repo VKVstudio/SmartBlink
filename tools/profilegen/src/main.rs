@@ -196,6 +196,10 @@ const EN_CORPUS: &[(&str, u32)] = &[
     ("letter word sentence paragraph text document article book story paper", 26),
     ("need feel keep seem meet free tree week deep sleep green speed street", 26),
     ("here there where were ever never over under after water other father", 32),
+    ("google youtube telegram github gitlab discord chrome browser windows reddit twitch netflix twitter spotify apple android linux microsoft firefox opera steam slack zoom openai chatgpt claude gemini cursor vscode", 48),
+    ("github google youtube telegram discord windows chrome browser", 45),
+    ("maybe really actually already again never always sometimes usually cool great awesome okay please thanks sorry sure weird strange quiet loud sound volume speaker headphone highlight flash blink", 36),
+    ("capslock scrolllock shift control enter space backspace delete escape pause break hotkey shortcut clipboard settings language switch convert select selection active paused running stopped working broken", 34),
 ];
 
 const RU_CORPUS: &[(&str, u32)] = &[
@@ -209,6 +213,12 @@ const RU_CORPUS: &[(&str, u32)] = &[
     ("разработка приложение интерфейс архитектура безопасность приватность лицензия документация поддержка управление контроль сервис решение проблема пример изменение создание удаление выбор", 30),
     ("почему потому поэтому однако конечно наверное действительно просто очень совсем сразу снова вместе вокруг около против после перед через между", 32),
     ("хлеб гриб блок строка также жизнь хорошо люблю тебя меня себя дням годам людям делам словам руку руки руке рукой руках голову", 30),
+    ("капслок незнаю стремно кстати вообще работает настройках привет почему наверное ладно короче понятно непонятно странно прикольно круто классно нормально отлично плохо сильно тихий тихо громко громкий звук динамик наушники", 40),
+    ("кнопки подсвечиваются подсветка мигает мигнул мигнула мигнуло мигать моргает моргнул моргнула заработало сломалось баг баги багов много мало ничего зачем откуда куда давай погнали продолжай остановись подожди смотри слушай", 38),
+    ("понял поняла поняли думал думала думаю знаю вижу слышу чувствую хочу могу надо нужно должно должен должна должны происходит происходить произошло случилось переключает переключить переводит перевести распознал распознает распознать", 38),
+    ("исправил исправить исправляет настройки настройками отметил отметить выбрал выбрать нажал нажать нажимаю печатаю пишу слова буква буквы предложение строки скролл шифт контрол альт пробел энтер трей иконка меню окна экран", 36),
+    ("раскладку раскладке русская английская гугл яндекс ютуб телеграм телега дискорд гитхаб виндовс винда хром ноутбук компьютер телефон утилита скрипт модель модели агент агенты скептик скептики скептиков тест тесты тестируют", 36),
+    ("делает делают работает работают пишет пишут настройки настройку настройкам файлу папку ошибки ошибок корректно работало", 34),
 ];
 
 fn main() {
