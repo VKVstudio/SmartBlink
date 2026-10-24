@@ -281,3 +281,16 @@ All 12 milestones (M1–M12) are complete. Await owner desktop verification and 
 - `cargo test --release` → `test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s`.
 - `cargo build --release` → 0 warnings.
 - `ISCC.exe installer\SmartBlink.iss` → `target\installer\SmartBlink-Setup-1.0.0.exe`.
+
+## Session #018 — 2026-10-24 — Second live-feedback fix pass (homograph bridging, WASAPI drain, CapsLock stillness)
+
+**Done**
+- Fixed multi-word burst truncation in `src/fix.rs` (`expand_erroneous_burst_run`): added homograph bridging (`herb` -> `руки` inside a Russian sentence) and sentence lookahead (`has_earlier_wrong_layout_word`) so full 9-word wrong-layout sentences convert completely on Double Shift while preserving genuine current-language prefixes (`Hello to ghbdtn`).
+- Fixed `CapsLockGuarded` mid-word uppercase corruption (`chf,fnSdftn`, `t,fytymRj`) and invisibility in `src/worker.rs` and `src/signal.rs`: removed `VK_SPACE` CapsLock trigger, raised `CAPS_MIN_GAP_MS` to `1200 ms` of full typing stillness, and restored 2 visible `85 ms` pulses once the user has stopped typing.
+- Fixed WASAPI click cutoff and laptop speaker audibility in `src/signal.rs`: stopped calling `IAudioClient::Reset()` at 30 ms while frames were still in the APO/DAC pipeline (waiting `90 ms` / `current_padding() == 0` instead, and flushing at the start of `play_click` if `padding > 0`), and retuned `generate_click_pcm()` (`1150 Hz -> 520 Hz` + `1850 Hz` harmonic + `2750 Hz` transient, `decay_tau = 11 ms`, `fc = 4000 Hz`, peak `30_000`).
+- Expanded `RU_CORPUS` in `tools/profilegen/src/main.rs` with `-ыва-`/`-ывает` verbs (`срабатывает`, `показывает`, `открывает`), double `зз` (`изза`, `позже`), `-еньк-`/`-оньк-` diminutives (`ебаненько`, `маленько`), `индикатор`, `мгновенно`, `видно`, `равно`, and regenerated `assets/profiles/*.bin`.
+
+**Verified**
+- `cargo test --release` → `test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s`.
+- `cargo build --release` → 0 warnings.
+- `ISCC.exe installer\SmartBlink.iss` → `target\installer\SmartBlink-Setup-1.0.0.exe`.

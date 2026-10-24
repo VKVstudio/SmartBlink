@@ -459,16 +459,8 @@ pub fn start(
                                 whitelist.record_ignored_word(&rendered, cur_hkl);
                             }
                         }
-                        if pending_caps_blink
-                            && signal.led_mode() == LedMode::CapsLockGuarded
-                            && !focus.refresh_password_immunity()
-                        {
-                            // Word boundary reached: safe to emit the single 25 ms Caps Lock pulse.
-                            signal.trigger_blink();
-                        }
                         word_alerted = false;
                         word_blinked = false;
-                        pending_caps_blink = false;
                         last_verdict = None;
                     }
 

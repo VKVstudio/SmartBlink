@@ -842,6 +842,17 @@ mod tests {
             ("nfrjt&", "такое?"),
             ("ljk;yj", "должно"),
             ("ghjbc[jlbnm&/", "происходить?."),
+            ("bylbrfnjh", "индикатор"),
+            ("chf,fnsdftn", "срабатывает"),
+            ("chf,fnSdftn", "срабатЫвает"),
+            ("vuyjdtyyj?", "мгновенно,"),
+            ("tuj", "его"),
+            ("bppf", "изза"),
+            ("lf;t", "даже"),
+            ("dblyj", "видно"),
+            ("hfdyj", "равно"),
+            ("t,fytymrj", "ебаненько"),
+            ("t,fytymRj", "ебаненьКо"),
         ] {
             let keys = type_on_layout(garbled_us, US_LAYOUT);
             let verdict = evaluate_tables(&keys, US_HKL, &tables).unwrap_or_else(|| {

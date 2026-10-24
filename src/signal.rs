@@ -39,8 +39,8 @@ use windows::Win32::UI::WindowsAndMessaging::{PeekMessageW, MSG, PM_NOREMOVE};
 pub const SAMPLE_RATE: u32 = 48_000;
 /// 24 ms at 48 kHz = 1152 frames (within the mandated 15–30 ms window).
 pub const CLICK_FRAMES: usize = 1152;
-/// Audible tactile wooden knock peak for laptop speakers (~73% full scale).
-pub const TARGET_PEAK_I16: i16 = 24_000;
+/// Audible tactile wooden knock peak for laptop speakers (~92% full scale).
+pub const TARGET_PEAK_I16: i16 = 30_000;
 
 pub const VK_CAPITAL_U16: u16 = 0x14;
 pub const SCAN_CAPITAL: u16 = 0x3A;
@@ -48,25 +48,26 @@ pub const VK_SCROLL_U16: u16 = 0x91;
 pub const SCAN_SCROLL: u16 = 0x46;
 
 /// Minimum idle gap required before starting a Caps Lock blink (`ARCHITECTURE.md` §3.4).
-/// Set to 350 ms so normal mid-word typing (100–250 ms between keys) never triggers Caps Lock mid-word.
-pub const CAPS_MIN_GAP_MS: u32 = 350;
+/// Set to 1200 ms so Caps Lock never toggles while the user is actively typing words/sentences
+/// (preventing uppercase character corruption like `chf,fnSdftn` or `t,fytymRj`).
+pub const CAPS_MIN_GAP_MS: u32 = 1200;
 const BLINK_HOLD_MS: u64 = 75;
-const CAPS_HOLD_MS: u64 = 25;
-const BLINK_GAP_MS: u64 = 50;
+const CAPS_HOLD_MS: u64 = 85;
+const BLINK_GAP_MS: u64 = 55;
 const BLINK_SLICE_MS: u64 = 5;
 
 /// Deterministically synthesize the 24 ms 48 kHz 16-bit mono tactile "wooden knock" click sample.
 pub fn generate_click_pcm() -> [i16; CLICK_FRAMES] {
     let mut raw = [0.0f64; CLICK_FRAMES];
     let sr = SAMPLE_RATE as f64;
-    let attack_samples = 48.0; // 1.0 ms crisp attack
-    let decay_tau = 0.0055; // 5.5 ms exponential body decay
+    let attack_samples = 36.0; // 0.75 ms crisp mechanical attack
+    let decay_tau = 0.0110; // 11.0 ms exponential body decay for high RMS energy on laptop speakers
     let mut phase = 0.0f64;
 
     for (i, slot) in raw.iter_mut().enumerate() {
         let t = (i as f64) / sr;
-        // Midrange wooden knock pitch sweep (580 Hz -> 270 Hz) audible on laptop speakers.
-        let freq = 270.0 + 310.0 * (-t / 0.0045).exp();
+        // Laptop-speaker sweet-spot pitch sweep (1150 Hz -> 520 Hz) above the 400 Hz transducer cutoff.
+        let freq = 520.0 + 630.0 * (-t / 0.0055).exp();
         phase += 2.0 * PI * freq / sr;
 
         let attack = if (i as f64) < attack_samples {
@@ -75,12 +76,15 @@ pub fn generate_click_pcm() -> [i16; CLICK_FRAMES] {
             1.0
         };
         let env = attack * (-t / decay_tau).exp();
-        let click_transient = (-t / 0.0018).exp() * (2.0 * PI * 1650.0 * t).sin();
-        *slot = env * (phase.sin() + 0.55 * (2.0 * phase).sin() + 0.35 * click_transient);
+        let body_harmonic = (2.0 * PI * 1850.0 * t).sin() * (-t / 0.0075).exp();
+        let click_transient = (-t / 0.0028).exp() * (2.0 * PI * 2750.0 * t).sin();
+        *slot = env * (phase.sin() + 0.65 * (2.0 * phase).sin())
+            + 0.45 * attack * body_harmonic
+            + 0.50 * attack * click_transient;
     }
 
-    // One-pole low-pass filter at fc = 2200 Hz to keep warmth while preserving laptop speaker clarity.
-    let rc = 1.0 / (2.0 * PI * 2200.0);
+    // One-pole low-pass filter at fc = 4000 Hz to preserve crisp tactile snap on laptop speakers.
+    let rc = 1.0 / (2.0 * PI * 4000.0);
     let dt = 1.0 / sr;
     let alpha = dt / (rc + dt);
     let mut filtered = [0.0f64; CLICK_FRAMES];
@@ -173,7 +177,9 @@ impl WasapiClicker {
         let frames = (CLICK_FRAMES as u32).min(self.buffer_frames);
         unsafe {
             let padding = self.audio_client.GetCurrentPadding().unwrap_or(0);
-            if self.buffer_frames.saturating_sub(padding) < frames {
+            if padding > 0 {
+                // Immediately flush any in-flight previous click so the new keystroke click
+                // starts at frame 0 with zero queueing delay.
                 let _ = self.audio_client.Stop();
                 let _ = self.audio_client.Reset();
             }
@@ -191,6 +197,10 @@ impl WasapiClicker {
             }
         }
         Ok(t0.elapsed().as_micros() as u64)
+    }
+
+    pub fn current_padding(&self) -> u32 {
+        unsafe { self.audio_client.GetCurrentPadding().unwrap_or(0) }
     }
 
     pub fn stop_and_reset(&self) {
@@ -312,11 +322,12 @@ pub fn inject_lock_toggle(vk: u16, scan_code: u16) -> bool {
 
 /// Execute a net-zero LED blink on `Scroll Lock` or `Caps Lock` (`ARCHITECTURE.md` §3.4, `AGENTS.md` #8).
 /// Each pulse is strictly paired (Toggle ON + Toggle OFF) and aborts immediately if a real keystroke arrives.
-/// `CapsLockGuarded` uses a single ultra-short 25 ms pulse so it cannot collide with user character casing.
+/// `CapsLockGuarded` only triggers after `CAPS_MIN_GAP_MS` (1200 ms) of full typing stillness and uses 2 clear
+/// 85 ms pulses so the user can actually see the LED without colliding with active keystrokes.
 pub fn blink_led_net_zero(mode: LedMode) -> bool {
     let (vk, scan, pulses, hold_ms) = match mode {
         LedMode::ScrollLock => (VK_SCROLL_U16, SCAN_SCROLL, 2usize, BLINK_HOLD_MS),
-        LedMode::CapsLockGuarded => (VK_CAPITAL_U16, SCAN_CAPITAL, 1usize, CAPS_HOLD_MS),
+        LedMode::CapsLockGuarded => (VK_CAPITAL_U16, SCAN_CAPITAL, 2usize, CAPS_HOLD_MS),
     };
 
     let orig_toggled = is_lock_key_toggled(vk);
@@ -372,7 +383,7 @@ pub fn trigger_test_alert(notify_mode: NotifyMode, led_mode: LedMode) {
             let mut pcm = generate_click_pcm();
             if let Ok(w) = WasapiClicker::new() {
                 if w.play_click(&pcm).is_ok() {
-                    thread::sleep(Duration::from_millis(32));
+                    thread::sleep(Duration::from_millis(120));
                     w.stop_and_reset();
                 }
             } else if let Some(wo) = WaveOutClicker::new() {
@@ -446,7 +457,9 @@ impl SignalEngine {
                                 match w.play_click(&pcm) {
                                     Ok(_) => {
                                         played = true;
-                                        for _ in 0..6 {
+                                        // Allow full WASAPI + APO + DAC pipeline drain (~90 ms) before stopping,
+                                        // so the 24 ms click is never truncated mid-playback by Reset().
+                                        for _ in 0..18 {
                                             if stop_audio.load(Ordering::Acquire)
                                                 || click_flag.load(Ordering::Acquire)
                                             {
@@ -454,7 +467,9 @@ impl SignalEngine {
                                             }
                                             thread::sleep(Duration::from_millis(5));
                                         }
-                                        if !click_flag.load(Ordering::Acquire) {
+                                        if !click_flag.load(Ordering::Acquire)
+                                            && w.current_padding() == 0
+                                        {
                                             w.stop_and_reset();
                                         }
                                     }
@@ -590,10 +605,10 @@ mod tests {
         assert_eq!(pcm[0], 0);
         assert_eq!(pcm[CLICK_FRAMES - 1], 0);
 
-        // Peak amplitude around TARGET_PEAK_I16 (24_000):
+        // Peak amplitude around TARGET_PEAK_I16 (30_000):
         let peak = pcm.iter().map(|&s| (s as i32).abs()).max().unwrap_or(0);
         assert!(
-            (23_000..=25_000).contains(&peak),
+            (29_000..=31_000).contains(&peak),
             "unexpected peak amplitude {}",
             peak
         );

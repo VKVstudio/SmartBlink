@@ -251,9 +251,51 @@ pub fn plan_word_fix(
     })
 }
 
+#[inline]
+fn is_direct_wrong_layout_token(cur_s: i32, dst_s: i32) -> bool {
+    (cur_s <= profile::CURRENT_MAX_PLAUSIBLE_SCORE && dst_s > cur_s)
+        || (dst_s >= 15 && (dst_s - cur_s) >= 20)
+        || (cur_s <= -50 && dst_s >= -35)
+}
+
+fn has_earlier_wrong_layout_word(
+    slots: &[KeyStrokeSlot],
+    current_table: &LayoutLayerTable,
+    target_table: &LayoutLayerTable,
+    cur_prof: Option<&'static profile::LanguageProfile>,
+    dst_prof: Option<&'static profile::LanguageProfile>,
+) -> bool {
+    let mut end = slots.len();
+    while end > 0 {
+        while end > 0 && slots[end - 1].vk == VK_SPACE {
+            end -= 1;
+        }
+        if end == 0 {
+            break;
+        }
+        let mut start = end;
+        while start > 0 && slots[start - 1].vk != VK_SPACE {
+            start -= 1;
+        }
+        let word = &slots[start..end];
+        if let (Some(cur_str), Some(dst_str)) = (
+            current_table.render_keys(word),
+            target_table.render_keys(word),
+        ) {
+            let cur_s = cur_prof.map(|p| p.score_word(&cur_str)).unwrap_or(0);
+            let dst_s = dst_prof.map(|p| p.score_word(&dst_str)).unwrap_or(0);
+            if is_direct_wrong_layout_token(cur_s, dst_s) {
+                return true;
+            }
+        }
+        end = start;
+    }
+    false
+}
+
 /// Walk backwards from the last word in `word_buf_slots` to include any immediately preceding
 /// words in the same burst that were also typed in the wrong layout, while stopping at any word
-/// that is valid in `current_table` (e.g. `"Hello "` in `"Hello ghbdtn"`).
+/// that is genuinely valid in `current_table` and gibberish in `target_table` (e.g. `"Hello "` in `"Hello ghbdtn"`).
 fn expand_erroneous_burst_run<'a>(
     word_buf_slots: &'a [KeyStrokeSlot],
     current_table: &LayoutLayerTable,
@@ -290,7 +332,22 @@ fn expand_erroneous_burst_run<'a>(
 
         let cur_s = cur_prof.map(|p| p.score_word(&cur_str)).unwrap_or(0);
         let dst_s = dst_prof.map(|p| p.score_word(&dst_str)).unwrap_or(0);
-        let is_also_wrong_layout = cur_s <= profile::CURRENT_MAX_PLAUSIBLE_SCORE && dst_s > cur_s;
+
+        // Hard stop if the word is genuinely valid in the current layout and gibberish in the target layout.
+        let is_genuine_current_lang = cur_s >= 5 && dst_s <= -15;
+        if is_genuine_current_lang {
+            break;
+        }
+
+        let is_also_wrong_layout = is_direct_wrong_layout_token(cur_s, dst_s)
+            || (dst_s >= -15
+                && has_earlier_wrong_layout_word(
+                    &word_buf_slots[..word_start],
+                    current_table,
+                    target_table,
+                    cur_prof,
+                    dst_prof,
+                ));
 
         if is_also_wrong_layout {
             start_idx = word_start;
@@ -729,5 +786,24 @@ mod tests {
         let plan3 = plan_word_fix(&burst3, US_HKL, &tables).expect("plan3");
         assert_eq!(plan3.original_text, "ghbdtn");
         assert_eq!(plan3.replacement_text, "привет");
+
+        // 4. Full 9-word sentence containing homograph "herb" ("руки") in the middle must convert completely:
+        let burst4 = type_str(
+            "bylbrfnjh chf,fnsdftn vuyjdtyyj? tuj bppf herb lf;t yt dblyj",
+            FULL_US,
+        );
+        let plan4 = plan_word_fix(&burst4, US_HKL, &tables).expect("plan4");
+        assert_eq!(
+            plan4.replacement_text,
+            "индикатор срабатывает мгновенно, его изза руки даже не видно"
+        );
+
+        // 5. Full 6-word sentence with short words and expressive diminutive:
+        let burst5 = type_str("rfr nj dct hfdyj t,fytymrj hf,jnftn", FULL_US);
+        let plan5 = plan_word_fix(&burst5, US_HKL, &tables).expect("plan5");
+        assert_eq!(
+            plan5.replacement_text,
+            "как то все равно ебаненько работает"
+        );
     }
 }
