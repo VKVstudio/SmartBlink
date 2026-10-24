@@ -40,7 +40,26 @@
 - `target\installer\SHA256SUMS.txt` generated for both `smartblink.exe` and `SmartBlink-Setup-1.0.0.exe`.
 
 ## Next Immediate Task
-Owner interactive desktop review of `v1.0.0` (`target\x86_64-pc-windows-gnullvm\release\smartblink.exe` and `target\installer\SmartBlink-Setup-1.0.0.exe`). Push/release only on explicit owner approval.
+**PRIORITY TASK (for next session):**
+1. **Multi-Persona & Per-Layout/Country Skeptic Audit (using `flash` subagents):**
+   - Launch a full panel of `flash` subagents covering:
+     - **Role/Persona Skeptics (8+):**
+       1. **Top-Tier Security & Threat-Model Auditor:** audit `WH_KEYBOARD_LL` / `WH_MOUSE_LL`, RAM zeroing (`ptr::write_volatile`), UIPI / privilege boundaries, scheduled task (`schtasks`), registry autostart, clipboard snapshot/restore, config parser (`%APPDATA%\SmartBlink\config.toml`), and supply-chain/binary surface for any memory leak, keystroke leak, race condition, injection, or crash vector.
+       2. **Competitor / Input-Utility Systems Programmer (Punto Switcher / Caramba / KeySwitcher veteran):** audit scan-code mapping, `ToUnicodeEx` dead-key/AltGr states, multi-word burst boundaries, homograph bridging, backspace/cursor tracking, and terminal/IDE/game edge cases.
+       3. **Everyday Power User:** audit typing feel, false positives/negatives, hotkey responsiveness, audio/LED alert ergonomics, and clipboard selection conversion (`Ctrl+Alt+Z`).
+       4. **Non-Technical / "Grandmother" Novice User:** audit foolproof onboarding, accidental key mashing, clear recovery when confused, and zero-surprise behavior.
+       5. **Legal & Privacy Compliance Auditor (GDPR / CCPA / MIT / Windows Store & SmartScreen):** verify zero telemetry, license headers, third-party notices, privacy guarantees, and installer disclosures.
+       6. **Product Director / CEO:** audit product positioning, reliability invariants, installer polish, and release readiness.
+       7. **Marketer:** audit value proposition, README/landing messaging, screenshots/diagrams, and user conversion flow.
+       8. **SEO / GEO Optimizer:** audit GitHub repository metadata, `README.md` / `README.ru.md`, structured keywords, AI-search (ChatGPT/Perplexity/Gemini/Google) discoverability, and release notes.
+     - **Per-Layout & Country/Culture Skeptics (all 20 built-in layouts/countries on `flash`):**
+       - Audit `EN`, `RU`, `UK`, `BE`, `KK`, `DE` (QWERTZ + dead keys/Umlauts), `FR` (AZERTY + number row Shift + dead keys), `ES`, `PT`, `IT`, `TR` (dotted/dotless `i`/`ı`), `PL` (`AltGr` / right-Alt diacritics!), `NL`, `SV`, `CS` (háček/čárka dead keys), `EL` (Greek `;` question mark + tonos), `HE` (RTL + final letter forms), `AR` (RTL + connected forms), `HY` (Armenian punctuation), `KA` (Georgian Shift layers).
+       - Check country-specific keyboard habits (`AltGr` = `Ctrl+Alt` on European keyboards vs `WordBuffer` chord reset!), national punctuation keys, and whether per-country/layout UX or hotkey/button options are needed.
+2. **Fix & Verify:**
+   - Implement fixes for all discovered vulnerabilities, layout/AltGr/dead-key/RTL bugs, UX gaps, and docs/SEO/GEO improvements.
+   - Verify with `cargo test --release`, `cargo build --release`, and `ISCC.exe installer\SmartBlink.iss`.
+3. **Prepare for GitHub Upload:**
+   - Ensure working tree, commits, `README.md`, `README.ru.md`, `CHANGELOG.md`, `LICENSE`, CI workflows, and `SHA256SUMS.txt` are 100% clean and ready for GitHub push/release (do NOT push without explicit owner command).
 
 ## Blockers
 - None. (`iscc` for Inno Setup 6 needed only at M10.)

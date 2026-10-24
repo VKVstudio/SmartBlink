@@ -322,3 +322,16 @@ All 12 milestones (M1–M12) are complete. Await owner desktop verification and 
 - `cargo test --release` → `test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s`.
 - `cargo build --release` → 0 warnings.
 - `ISCC.exe installer\SmartBlink.iss` → `target\installer\SmartBlink-Setup-1.0.0.exe` + `SHA256SUMS.txt` updated.
+
+## Session #021 — 2026-10-25 — Queued Priority Task for Next Session (Multi-Persona + 20-Layout Skeptic Audit & GitHub Prep)
+
+**Owner Decision**
+- Visual design (Canonical Dark Bento UI + brand icons) is approved by owner (`"визуально теперь мне нравится"`).
+- Recorded the next priority task in `.system/checkpoint.md` and `HANDOFF.md` and stopped for the night as instructed (`"сейчас поставь приоритетную задачу в системные файлы, и ничего не делай больше. завтра продолжим"`).
+
+**Next agent (Priority Task)**
+1. Read `AGENTS.md` and `.system/checkpoint.md` ("Next Immediate Task").
+2. Spawn `flash` subagents for:
+   - **8 Role/Persona Skeptics:** Top-tier Cyber/Security Auditor, Input-Utility Systems Programmer, Everyday User, Novice/"Grandmother" User, Lawyer/Privacy Auditor, CEO/Director, Marketer, and SEO/GEO Optimizer.
+   - **20 Layout/Country Skeptics (`en`, `ru`, `uk`, `be`, `kk`, `de`, `fr`, `es`, `pt`, `it`, `tr`, `pl`, `nl`, `sv`, `cs`, `el`, `he`, `ar`, `hy`, `ka`):** audit national layouts (especially European `AltGr` = `LCtrl+RAlt`, dead keys, `Shift` number rows on AZERTY/Czech, Turkish `i`/`ı`, Greek/Armenian punctuation, RTL Hebrew/Arabic, and country-specific UX/button needs).
+3. Fix all identified code, security, layout, UX, and documentation/SEO/GEO issues; rebuild release binary + installer; prepare repository for GitHub upload (await explicit owner approval before `git push`).
