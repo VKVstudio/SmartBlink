@@ -229,3 +229,15 @@ Read `AGENTS.md`, `.system/checkpoint.md`. Execute M9 (`ARCHITECTURE.md` §3.8, 
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. Execute M10 (`ARCHITECTURE.md` §4, §6).
+
+## Session #014 — 2026-10-24 — M10 implementation (Inno Setup 6 installer script & package build)
+
+**Done**
+- Created `installer/SmartBlink.iss` (`PrivilegesRequired=lowest`, `PrivilegesRequiredOverridesAllowed=dialog`, `{autopf}\SmartBlink`, EN/RU localization, optional HKCU Run and elevated ONLOGON task checkboxes, graceful `WM_CLOSE` on `SmartBlinkTrayWnd` + `taskkill` fallback, clean uninstall with optional `%APPDATA%\SmartBlink` removal prompt).
+- Verified compilation with Inno Setup 6.7.3 (`C:\Users\user\AppData\Local\Programs\Inno Setup 6\ISCC.exe installer\SmartBlink.iss`), producing `target\installer\SmartBlink-Setup-1.0.0.exe`.
+
+**Verified**
+- `ISCC.exe installer\SmartBlink.iss` → `Successful compile (1,813 sec)`, `target\installer\SmartBlink-Setup-1.0.0.exe`.
+
+**Next agent**
+Read `AGENTS.md`, `.system/checkpoint.md`. Execute M11 (`ARCHITECTURE.md` §4, §5, §6).

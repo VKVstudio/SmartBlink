@@ -1,6 +1,6 @@
 # Checkpoint — SmartBlink
 
-`Current Phase`: M9 complete (39/39 unit tests green, release build clean). Ready for M10.
+`Current Phase`: M10 complete (`installer/SmartBlink.iss` compiled cleanly via `ISCC.exe` -> `target\installer\SmartBlink-Setup-1.0.0.exe`). Ready for M11.
 `Approved Stack`: Rust (`x86_64-pc-windows-gnullvm` via LLVM-MinGW UCRT; MSVC/Windows SDK forbidden), `windows` crate 0.58, Win32 tray + Settings window, hand-rolled flat TOML config in `%APPDATA%\SmartBlink\config.toml`, WASAPI shared audio, Inno Setup 6 installer (per-user default `{autopf}`, optional elevated ONLOGON scheduled task). License MIT. Publisher `VKV Studio` / vkvstudio.com. Min OS: Windows 10 1809. Default fix hotkey: double Left Shift. Default alert mode: Both (audio + LED), LED defaults to Scroll Lock.
 
 ## Completed
@@ -20,19 +20,23 @@
   - `tools/profilegen/src/corpora.rs` & `tools/profilegen/src/main.rs`: generated all 20 built-in language profiles under `assets/profiles/*.bin` (`54,191` bytes total).
   - `src/profile.rs`: embedded all 20 profile blobs (`all_profiles()`) + `intra_latin_and_multi_script_conflict_suite_de_fr_tr_pl_uk`.
 - M8 complete (`c3e3461`):
-  - `src/clipboard.rs`: `SessionWhitelist` (FNV-1a hashed word+prefix session whitelist, volatile-zeroed on clear/drop), `ClipboardSnapshot` & `ClipboardRestoreGuard` (byte-for-byte multi-format `HGLOBAL` clipboard save/restore in original enumeration order, volatile-zeroed on drop), `SelectionHotkeyDetector` (`Ctrl+Alt+Z`), `convert_selection_text` & `convert_selection_in_window`.
+  - `src/clipboard.rs`: `SessionWhitelist`, `ClipboardSnapshot` & `ClipboardRestoreGuard`, `SelectionHotkeyDetector` (`Ctrl+Alt+Z`), `convert_selection_text` & `convert_selection_in_window`.
   - `src/immunity.rs` & `src/layout.rs`: added `is_hwnd_ime_active` and reverse character lookup (`find_char`, `char_at`, `convert_str_to`).
-- M9 complete:
-  - `src/autostart.rs`: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\SmartBlink` registration + opt-in elevated scheduled task (`ONLOGON`, `RL HIGHEST`) and process elevation check (`TokenElevation`).
-  - `src/settings.rs`: native Win32 Settings window (`SmartBlinkSettingsWnd`) with live status/elevation display, Alert mode / LED channel / Fix hotkey cycle buttons, HKCU autostart toggle, elevated task toggle, and `Open config.toml` button.
-  - `src/tray.rs` & `src/config.rs` & `src/worker.rs`: full tray popup menu with submenus, current-process exclusion action, double-click Settings activation, and live atomic config reload.
+- M9 complete (`b0b4bb3`):
+  - `src/autostart.rs`: `HKCU\...\Run\SmartBlink` registration + opt-in elevated scheduled task (`ONLOGON`, `RL HIGHEST`) and `TokenElevation` check.
+  - `src/settings.rs`: pure Win32 Settings window (`SmartBlinkSettingsWnd`).
+  - `src/tray.rs` & `src/config.rs` & `src/worker.rs`: full tray popup menu + live atomic config reload.
+- M10 complete:
+  - `installer/SmartBlink.iss`: Inno Setup 6 installer script (`PrivilegesRequired=lowest`, `PrivilegesRequiredOverridesAllowed=dialog`, `{autopf}\SmartBlink`, EN/RU languages, optional HKCU Run & elevated ONLOGON task checkboxes, graceful `WM_CLOSE` + `taskkill` fallback, clean uninstall with optional settings cleanup).
+  - Compiled via `C:\Users\user\AppData\Local\Programs\Inno Setup 6\ISCC.exe installer\SmartBlink.iss` -> `target\installer\SmartBlink-Setup-1.0.0.exe`.
 
 ## Verified
 - `cargo build --release`: 0 warnings, produces `target\x86_64-pc-windows-gnullvm\release\smartblink.exe`.
 - `cargo test --release`: `test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`.
+- `ISCC.exe installer\SmartBlink.iss`: `Successful compile (1,813 sec)` -> `target\installer\SmartBlink-Setup-1.0.0.exe`.
 
 ## Next Immediate Task
-M10 — `installer/SmartBlink.iss` Inno Setup 6 installer script + uninstall cleanliness (`ARCHITECTURE.md` §4, §6).
+M11 — GitHub Actions release workflow (`.github/workflows/release.yml`), `LICENSE`, `README.md` (EN), `README.ru.md` (RU), `CONTRIBUTING.md`, `docs/CONFIG.md`, `docs/PRIVACY.md`, `docs/BUILDING.md` (`ARCHITECTURE.md` §4, §5, §6).
 
 ## Blockers
 - None. (`iscc` for Inno Setup 6 needed only at M10.)
