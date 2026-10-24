@@ -236,7 +236,8 @@ pub fn plan_word_fix(
 
     let run = expand_erroneous_burst_run(word_buf_slots, current_table, target_table);
     let original_text = current_table.render_keys(run)?;
-    let replacement_text = target_table.render_keys(run)?;
+    let replacement_text =
+        render_replacement_preserving_top_row_punct(run, current_table, target_table)?;
     if replacement_text.is_empty() || replacement_text == original_text {
         return None;
     }
@@ -249,6 +250,45 @@ pub fn plan_word_fix(
         replacement_text,
         backspace_count,
     })
+}
+
+/// Render `run` into `target_table` while preserving trailing `?` (`Shift+7`), `:` (`Shift+6`),
+/// and `;` (`Shift+4`) when typed in Russian layout at the end of a word (so `акшутв?` and
+/// `сщккуседн?` convert to `friend?` and `correctly?` instead of `friend&` and `correctly&`).
+fn render_replacement_preserving_top_row_punct(
+    run: &[KeyStrokeSlot],
+    current_table: &LayoutLayerTable,
+    target_table: &LayoutLayerTable,
+) -> Option<String> {
+    let mut out = String::with_capacity(run.len());
+    for (idx, slot) in run.iter().enumerate() {
+        if slot.vk == VK_SPACE {
+            out.push(' ');
+            continue;
+        }
+        let cur_ch = match current_table.lookup(slot) {
+            layout::ScanTranslation::Char(c) => Some(c),
+            layout::ScanTranslation::DeadKey => return None,
+            layout::ScanTranslation::None => None,
+        };
+        let dst_ch = match target_table.lookup(slot) {
+            layout::ScanTranslation::Char(c) => c,
+            layout::ScanTranslation::DeadKey => return None,
+            layout::ScanTranslation::None => continue,
+        };
+        let at_word_end = idx > 0 && (idx + 1 == run.len() || run[idx + 1].vk == VK_SPACE);
+        let mapped = if let Some(c_ch) = cur_ch {
+            if at_word_end && matches!((c_ch, dst_ch), ('?', '&') | (':', '^') | (';', '$')) {
+                c_ch
+            } else {
+                dst_ch
+            }
+        } else {
+            dst_ch
+        };
+        out.push(mapped);
+    }
+    Some(out)
 }
 
 #[inline]
@@ -804,6 +844,17 @@ mod tests {
         assert_eq!(
             plan5.replacement_text,
             "как то все равно ебаненько работает"
+        );
+
+        // 6. Full 11-word RU->EN sentence with Russian `?` (Shift+7) on `акшутв?` and `сщккуседн?`:
+        let burst6 = type_str(
+            "рщц фку нщг ьн акшутв? ш ерштл, црфе ше цщкл сщккуседн?",
+            FULL_RU,
+        );
+        let plan6 = plan_word_fix(&burst6, RU_HKL, &tables).expect("plan6");
+        assert_eq!(
+            plan6.replacement_text,
+            "how are you my friend? i think? what it work correctly?"
         );
     }
 }

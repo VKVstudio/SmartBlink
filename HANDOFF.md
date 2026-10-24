@@ -294,3 +294,15 @@ All 12 milestones (M1–M12) are complete. Await owner desktop verification and 
 - `cargo test --release` → `test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s`.
 - `cargo build --release` → 0 warnings.
 - `ISCC.exe installer\SmartBlink.iss` → `target\installer\SmartBlink-Setup-1.0.0.exe`.
+
+## Session #019 — 2026-10-24 — RU->EN punctuation (`акшутв?` -> `friend?`) & 1-letter/short English words fix
+
+**Done**
+- Fixed RU->EN burst interruption on `акшутв?` (`Shift+7` in RU -> `&` in EN): added `'&' | '/' | '^' | '$' | '@' | '#'` to `is_sentence_punct` in `src/profile.rs` so English words ending with Russian top-row/slash punctuation (`friend&`, `correctly&`, `friend/`) are not penalized `-230` as OOV characters.
+- Added `render_replacement_preserving_top_row_punct` in `src/fix.rs` so trailing `?` (`Shift+7`), `:` (`Shift+6`), and `;` (`Shift+4`) typed in RU layout at the end of a word stay `?`, `:`, `;` (`friend?`, `correctly?`) instead of becoming `&`, `^`, `$` (`friend&`, `correctly&`).
+- Updated `tools/profilegen/src/main.rs` (`indices.len() < 2` instead of `<= 2`) to include 1-letter words (`i`, `a`, `и`, `в`, `я`, `с`, `к`, `у`, `о`) and added common 2–3 letter English words (`are`, `my`, `it`, `is`, `was`, `why`, `yes`, `no`, `correctly`) to `EN_CORPUS`; regenerated `assets/profiles/*.bin`.
+
+**Verified**
+- `cargo test --release` → `test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s`.
+- `cargo build --release` → 0 warnings.
+- `ISCC.exe installer\SmartBlink.iss` → `target\installer\SmartBlink-Setup-1.0.0.exe`.

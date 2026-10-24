@@ -102,7 +102,7 @@ fn build_profile_bytes(spec: &LangSpec<'_>) -> Vec<u8> {
                     }
                 }
             }
-            if indices.len() <= 2 {
+            if indices.len() < 2 {
                 continue;
             }
             indices.push(0); // end boundary '$'
@@ -200,6 +200,8 @@ const EN_CORPUS: &[(&str, u32)] = &[
     ("github google youtube telegram discord windows chrome browser", 45),
     ("maybe really actually already again never always sometimes usually cool great awesome okay please thanks sorry sure weird strange quiet loud sound volume speaker headphone highlight flash blink", 36),
     ("capslock scrolllock shift control enter space backspace delete escape pause break hotkey shortcut clipboard settings language switch convert select selection active paused running stopped working broken", 34),
+    ("i a am is are was were be been being have has had do does did done can could will would shall should may might must my me we us our you your he him his she her it its they them their what which who whom whose where when why how yes no ok okay sure well very much many more most some any all both each few other another such own same so than too just now then here there", 46),
+    ("correctly correct works worked friend friends thinking thought", 40),
 ];
 
 const RU_CORPUS: &[(&str, u32)] = &[
