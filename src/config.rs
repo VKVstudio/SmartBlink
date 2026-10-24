@@ -4,9 +4,61 @@
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 pub const APP_DIR_NAME: &str = "SmartBlink";
 pub const CONFIG_FILE_NAME: &str = "config.toml";
+
+static RUNTIME_CONFIG: OnceLock<Mutex<Config>> = OnceLock::new();
+static CONFIG_REV: AtomicU64 = AtomicU64::new(1);
+static LAST_FG_PROCESS: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+pub fn init_runtime_config(cfg: Config) {
+    let lock = RUNTIME_CONFIG.get_or_init(|| Mutex::new(cfg.clone()));
+    if let Ok(mut guard) = lock.lock() {
+        *guard = cfg;
+    }
+    CONFIG_REV.fetch_add(1, Ordering::Release);
+}
+
+pub fn get_runtime_config() -> Config {
+    let lock = RUNTIME_CONFIG.get_or_init(|| Mutex::new(Config::default()));
+    lock.lock().map(|g| g.clone()).unwrap_or_default()
+}
+
+pub fn update_runtime_config<F: FnOnce(&mut Config)>(f: F) -> Config {
+    let lock = RUNTIME_CONFIG.get_or_init(|| Mutex::new(Config::default()));
+    let updated = if let Ok(mut guard) = lock.lock() {
+        f(&mut guard);
+        guard.clone()
+    } else {
+        Config::default()
+    };
+    CONFIG_REV.fetch_add(1, Ordering::Release);
+    let _ = save(&updated);
+    updated
+}
+
+pub fn config_revision() -> u64 {
+    CONFIG_REV.load(Ordering::Acquire)
+}
+
+pub fn set_last_foreground_process(proc_name: &str) {
+    let clean = proc_name.trim();
+    if clean.is_empty() || clean.eq_ignore_ascii_case("smartblink") || clean.eq_ignore_ascii_case("explorer") {
+        return;
+    }
+    let lock = LAST_FG_PROCESS.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = lock.lock() {
+        *guard = Some(clean.to_ascii_lowercase());
+    }
+}
+
+pub fn get_last_foreground_process() -> Option<String> {
+    let lock = LAST_FG_PROCESS.get_or_init(|| Mutex::new(None));
+    lock.lock().ok().and_then(|g| g.clone())
+}
 
 /// Alert channel selection. Mirrors ARCHITECTURE.md §3.4/§3.5 config keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

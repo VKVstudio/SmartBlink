@@ -69,6 +69,13 @@ impl FixGestureDetector {
         self.first_tap_up_tick = None;
     }
 
+    pub fn set_trigger(&mut self, trigger: FixTrigger) {
+        if self.trigger != trigger {
+            self.trigger = trigger;
+            self.reset();
+        }
+    }
+
     #[inline]
     fn matches_target_modifier(&self, rec: &InputRecord) -> bool {
         match self.trigger {

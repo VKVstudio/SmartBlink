@@ -214,3 +214,18 @@ Read `AGENTS.md`, `.system/checkpoint.md`. Execute M8 (`ARCHITECTURE.md` §3.6, 
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. Execute M9 (`ARCHITECTURE.md` §3.8, §3.9, §6).
+
+## Session #013 — 2026-10-24 — M9 implementation (Win32 Settings UI, full tray menu, HKCU autostart, opt-in elevated task)
+
+**Done**
+- Added `Win32_System_Registry` feature to `Cargo.toml`.
+- Created `src/autostart.rs`: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\SmartBlink` read/write/delete, `is_process_elevated()` (`TokenElevation`), and opt-in ONLOGON highest-privilege scheduled task registration/removal via `schtasks.exe`.
+- Created `src/settings.rs`: pure Win32 Settings window (`SmartBlinkSettingsWnd`) showing live engine/elevation status and controls for Alert Mode, LED Channel, Fix Gesture, HKCU Autostart, Elevated Task, and `Open config.toml`.
+- Updated `src/tray.rs`, `src/config.rs`, `src/immunity.rs`, and `src/worker.rs`: complete tray context menu with submenus, current-process exclusion item, double-click Settings activation, and live atomic config reload in the worker thread.
+
+**Verified**
+- `cargo build --release` → 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe`.
+- `cargo test --release` → `test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`.
+
+**Next agent**
+Read `AGENTS.md`, `.system/checkpoint.md`. Execute M10 (`ARCHITECTURE.md` §4, §6).

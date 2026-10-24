@@ -4,6 +4,7 @@
 
 #![windows_subsystem = "windows"]
 
+mod autostart;
 mod clipboard;
 mod config;
 mod fix;
@@ -12,6 +13,7 @@ mod immunity;
 mod layout;
 mod profile;
 mod ring;
+mod settings;
 mod signal;
 mod single_instance;
 mod tray;
@@ -27,6 +29,7 @@ fn main() {
     };
 
     let cfg = config::load_or_create();
+    config::init_runtime_config(cfg.clone());
 
     let _worker = match worker::start(
         cfg.blacklist,

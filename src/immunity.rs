@@ -177,7 +177,10 @@ impl FocusCache {
             };
         }
         let proc_immune = match query_hwnd_process_name(hwnd) {
-            Some(proc_name) => is_process_blacklisted(&proc_name, blacklist),
+            Some(proc_name) => {
+                crate::config::set_last_foreground_process(&proc_name);
+                is_process_blacklisted(&proc_name, blacklist)
+            }
             None => false,
         };
         let immune = proc_immune || is_hwnd_ime_active(hwnd) || self.is_focused_password();

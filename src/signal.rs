@@ -431,7 +431,8 @@ impl SignalEngine {
             .spawn(move || {
                 while !stop_led.load(Ordering::Acquire) {
                     if blink_flag.swap(false, Ordering::AcqRel) {
-                        let _ = blink_led_net_zero(led_mode);
+                        let live_led = crate::config::get_runtime_config().led_mode;
+                        let _ = blink_led_net_zero(live_led);
                     } else {
                         thread::park();
                     }
@@ -468,6 +469,14 @@ impl SignalEngine {
     #[inline]
     pub fn led_mode(&self) -> LedMode {
         self.led_mode
+    }
+
+    pub fn set_notify_mode(&mut self, mode: NotifyMode) {
+        self.notify_mode = mode;
+    }
+
+    pub fn set_led_mode(&mut self, mode: LedMode) {
+        self.led_mode = mode;
     }
 
     /// Non-blocking trigger of the 24 ms low-frequency click on the audio thread.

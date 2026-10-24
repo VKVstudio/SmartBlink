@@ -1,6 +1,6 @@
 # Checkpoint — SmartBlink
 
-`Current Phase`: M8 complete (36/36 unit tests green, release build clean). Ready for M9.
+`Current Phase`: M9 complete (39/39 unit tests green, release build clean). Ready for M10.
 `Approved Stack`: Rust (`x86_64-pc-windows-gnullvm` via LLVM-MinGW UCRT; MSVC/Windows SDK forbidden), `windows` crate 0.58, Win32 tray + Settings window, hand-rolled flat TOML config in `%APPDATA%\SmartBlink\config.toml`, WASAPI shared audio, Inno Setup 6 installer (per-user default `{autopf}`, optional elevated ONLOGON scheduled task). License MIT. Publisher `VKV Studio` / vkvstudio.com. Min OS: Windows 10 1809. Default fix hotkey: double Left Shift. Default alert mode: Both (audio + LED), LED defaults to Scroll Lock.
 
 ## Completed
@@ -19,17 +19,20 @@
 - M7 complete (`4ab0c6c`):
   - `tools/profilegen/src/corpora.rs` & `tools/profilegen/src/main.rs`: generated all 20 built-in language profiles under `assets/profiles/*.bin` (`54,191` bytes total).
   - `src/profile.rs`: embedded all 20 profile blobs (`all_profiles()`) + `intra_latin_and_multi_script_conflict_suite_de_fr_tr_pl_uk`.
-- M8 complete:
+- M8 complete (`c3e3461`):
   - `src/clipboard.rs`: `SessionWhitelist` (FNV-1a hashed word+prefix session whitelist, volatile-zeroed on clear/drop), `ClipboardSnapshot` & `ClipboardRestoreGuard` (byte-for-byte multi-format `HGLOBAL` clipboard save/restore in original enumeration order, volatile-zeroed on drop), `SelectionHotkeyDetector` (`Ctrl+Alt+Z`), `convert_selection_text` & `convert_selection_in_window`.
-  - `src/immunity.rs`: added `is_hwnd_ime_active` (`ImmGetContext` + `ImmGetOpenStatus`).
-  - `src/layout.rs`: added `find_char`, `char_at`, `convert_str_to` on `LayoutLayerTable`.
+  - `src/immunity.rs` & `src/layout.rs`: added `is_hwnd_ime_active` and reverse character lookup (`find_char`, `char_at`, `convert_str_to`).
+- M9 complete:
+  - `src/autostart.rs`: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\SmartBlink` registration + opt-in elevated scheduled task (`ONLOGON`, `RL HIGHEST`) and process elevation check (`TokenElevation`).
+  - `src/settings.rs`: native Win32 Settings window (`SmartBlinkSettingsWnd`) with live status/elevation display, Alert mode / LED channel / Fix hotkey cycle buttons, HKCU autostart toggle, elevated task toggle, and `Open config.toml` button.
+  - `src/tray.rs` & `src/config.rs` & `src/worker.rs`: full tray popup menu with submenus, current-process exclusion action, double-click Settings activation, and live atomic config reload.
 
 ## Verified
 - `cargo build --release`: 0 warnings, produces `target\x86_64-pc-windows-gnullvm\release\smartblink.exe`.
-- `cargo test --release`: `test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s`.
+- `cargo test --release`: `test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`.
 
 ## Next Immediate Task
-M9 — Settings window UI, complete tray menu, autostart registry + optional elevated scheduled task (`ARCHITECTURE.md` §3.8, §3.9, §6).
+M10 — `installer/SmartBlink.iss` Inno Setup 6 installer script + uninstall cleanliness (`ARCHITECTURE.md` §4, §6).
 
 ## Blockers
 - None. (`iscc` for Inno Setup 6 needed only at M10.)

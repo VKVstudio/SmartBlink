@@ -297,10 +297,10 @@ impl Drop for WorkerGuard {
 }
 
 pub fn start(
-    blacklist: Vec<String>,
+    mut blacklist: Vec<String>,
     notify_mode: NotifyMode,
     led_mode: LedMode,
-    fix_trigger: FixTrigger,
+    mut fix_trigger: FixTrigger,
 ) -> windows::core::Result<WorkerGuard> {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_flag = Arc::clone(&stop);
@@ -319,13 +319,25 @@ pub fn start(
             for &hkl in &active_hkls {
                 let _ = layout_cache.get_or_build(hkl);
             }
-            let signal = SignalEngine::start(notify_mode, led_mode);
+            let mut signal = SignalEngine::start(notify_mode, led_mode);
             let mut last_verdict: Option<DetectionVerdict> = None;
             let mut word_blinked = false;
             let mut word_alerted = false;
             let mut last_key_instant: Option<Instant> = None;
+            let mut seen_cfg_rev = crate::config::config_revision();
 
             while !stop_flag.load(Ordering::Acquire) {
+                let cur_rev = crate::config::config_revision();
+                if cur_rev != seen_cfg_rev {
+                    seen_cfg_rev = cur_rev;
+                    let live = crate::config::get_runtime_config();
+                    blacklist = live.blacklist;
+                    fix_trigger = live.fix_trigger;
+                    fix_detector.set_trigger(fix_trigger);
+                    signal.set_notify_mode(live.notify_mode);
+                    signal.set_led_mode(live.led_mode);
+                    focus.invalidate();
+                }
                 if hooks::is_paused() {
                     if !word_buf.is_empty() {
                         word_buf.reset();
