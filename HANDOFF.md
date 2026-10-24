@@ -166,3 +166,19 @@ Read `AGENTS.md`, `.system/checkpoint.md`. Execute M5 (`ARCHITECTURE.md` §3.4, 
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. Execute M6 (`ARCHITECTURE.md` §3.1, §3.5, §6).
+
+## Session #010 — 2026-10-24 — M6 implementation (manual fix gesture, backspace+KEYEVENTF_UNICODE replay, target layout switch)
+
+**Done**
+- Created `src/fix.rs`:
+  - `FixGestureDetector`: supports `DoubleLeftShift` (default), `DoubleLeftCtrl`, and `PauseBreak` with `DOUBLE_TAP_WINDOW_MS = 300`, ignoring key auto-repeat and rejecting intervening keys or mouse clicks.
+  - `plan_word_fix` & `plan_word_fix_cached`: captures `last_word_run_for_fix` (including trailing spaces), resolves target `HKL` via M4 scorer (or best alternative installed layout for short explicit fixes), and computes exact character backspace count.
+  - `build_fix_inputs` & `execute_fix`: emits `VK_BACK` + `KEYEVENTF_UNICODE` inside `hooks::begin_suppression()` / `end_suppression()`, then switches layout via `ActivateKeyboardLayout` + `PostMessageW(WM_INPUTLANGCHANGEREQUEST)`.
+- Wired `FixGestureDetector` into `src/worker.rs` and `src/main.rs`.
+
+**Verified**
+- `cargo build --release` → 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe`.
+- `cargo test --release` → `test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s`.
+
+**Next agent**
+Read `AGENTS.md`, `.system/checkpoint.md`. Execute M7 (`ARCHITECTURE.md` §3.3, §6).

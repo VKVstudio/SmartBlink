@@ -5,6 +5,7 @@
 #![windows_subsystem = "windows"]
 
 mod config;
+mod fix;
 mod hooks;
 mod immunity;
 mod layout;
@@ -26,7 +27,12 @@ fn main() {
 
     let cfg = config::load_or_create();
 
-    let _worker = match worker::start(cfg.blacklist, cfg.notify_mode, cfg.led_mode) {
+    let _worker = match worker::start(
+        cfg.blacklist,
+        cfg.notify_mode,
+        cfg.led_mode,
+        cfg.fix_trigger,
+    ) {
         Ok(guard) => guard,
         Err(_) => return,
     };

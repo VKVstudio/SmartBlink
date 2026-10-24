@@ -4,7 +4,8 @@
 //! - Hard reset on mouse click, navigation keys, modifier chords, idle timeout (3.5 s),
 //!   focus change, or immune foreground process.
 
-use crate::config::{LedMode, NotifyMode};
+use crate::config::{FixTrigger, LedMode, NotifyMode};
+use crate::fix::{self, FixGestureDetector};
 use crate::hooks;
 use crate::immunity::FocusCache;
 use crate::layout::{self, LayoutCache};
@@ -238,6 +239,10 @@ fn is_shift_vk(vk: u16) -> bool {
     matches!(vk, VK_SHIFT | VK_LSHIFT | VK_RSHIFT)
 }
 
+fn is_ctrl_vk(vk: u16) -> bool {
+    matches!(vk, VK_CONTROL | VK_LCONTROL | VK_RCONTROL)
+}
+
 fn is_non_text_toggle_or_shift(vk: u16) -> bool {
     matches!(
         vk,
@@ -265,6 +270,15 @@ fn is_navigation_or_reset_vk(vk: u16) -> bool {
     )
 }
 
+fn zero_and_clear_vec(v: &mut Vec<KeyStrokeSlot>) {
+    for slot in v.iter_mut() {
+        unsafe {
+            ptr::write_volatile(slot, KeyStrokeSlot::zeroed());
+        }
+    }
+    v.clear();
+}
+
 pub struct WorkerGuard {
     stop: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
@@ -284,6 +298,7 @@ pub fn start(
     blacklist: Vec<String>,
     notify_mode: NotifyMode,
     led_mode: LedMode,
+    fix_trigger: FixTrigger,
 ) -> windows::core::Result<WorkerGuard> {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_flag = Arc::clone(&stop);
@@ -293,6 +308,8 @@ pub fn start(
         .spawn(move || {
             let mut focus = FocusCache::new();
             let mut word_buf = WordBuffer::new();
+            let mut ctrl_snapshot: Vec<KeyStrokeSlot> = Vec::new();
+            let mut fix_detector = FixGestureDetector::new(fix_trigger);
             let mut layout_cache = LayoutCache::new();
             let active_hkls = layout::active_layouts();
             for &hkl in &active_hkls {
@@ -308,6 +325,8 @@ pub fn start(
                     if !word_buf.is_empty() {
                         word_buf.reset();
                     }
+                    zero_and_clear_vec(&mut ctrl_snapshot);
+                    fix_detector.reset();
                     if last_verdict.is_some() {
                         last_verdict = None;
                     }
@@ -323,6 +342,8 @@ pub fn start(
                     if !word_buf.is_empty() {
                         word_buf.reset();
                     }
+                    zero_and_clear_vec(&mut ctrl_snapshot);
+                    fix_detector.reset();
                     if last_verdict.is_some() {
                         last_verdict = None;
                     }
@@ -341,8 +362,48 @@ pub fn start(
                     if status.is_immune {
                         continue;
                     }
+
+                    // Preserve a snapshot before bare Left Ctrl down when DoubleLeftCtrl is the trigger.
+                    if fix_trigger == FixTrigger::DoubleLeftCtrl {
+                        if rec.kind == InputKind::KeyDown && is_ctrl_vk(rec.vk) {
+                            if !word_buf.is_empty() {
+                                zero_and_clear_vec(&mut ctrl_snapshot);
+                                ctrl_snapshot.extend_from_slice(word_buf.as_slice());
+                            }
+                        } else if rec.kind == InputKind::KeyDown && !is_ctrl_vk(rec.vk) {
+                            zero_and_clear_vec(&mut ctrl_snapshot);
+                        }
+                    }
+
+                    let fix_triggered = fix_detector.feed(rec);
                     let prev_len = word_buf.len();
                     word_buf.feed(rec);
+
+                    if fix_triggered && !focus.refresh_password_immunity() {
+                        let slots = if !word_buf.is_empty() {
+                            word_buf.as_slice()
+                        } else {
+                            ctrl_snapshot.as_slice()
+                        };
+                        let hwnd = focus.current_hwnd();
+                        let cur_hkl = layout::window_layout(hwnd);
+                        if let Some(plan) = fix::plan_word_fix_cached(
+                            slots,
+                            cur_hkl,
+                            &active_hkls,
+                            &mut layout_cache,
+                        ) {
+                            let _ = fix::execute_fix(&plan, hwnd);
+                        }
+                        word_buf.reset();
+                        zero_and_clear_vec(&mut ctrl_snapshot);
+                        last_verdict = None;
+                        word_blinked = false;
+                        last_key_instant = None;
+                        had_typing_key = false;
+                        continue;
+                    }
+
                     if word_buf.is_empty() {
                         word_blinked = false;
                     } else if rec.kind == InputKind::KeyDown && word_buf.len() != prev_len {
@@ -400,6 +461,7 @@ pub fn start(
             }
 
             word_buf.reset();
+            zero_and_clear_vec(&mut ctrl_snapshot);
             global_ring().clear_and_zero();
         })
         .map_err(|_| windows::core::Error::from_win32())?;
