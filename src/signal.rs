@@ -38,8 +38,8 @@ use windows::Win32::UI::WindowsAndMessaging::{PeekMessageW, MSG, PM_NOREMOVE};
 pub const SAMPLE_RATE: u32 = 48_000;
 /// 24 ms at 48 kHz = 1152 frames (within the mandated 15–30 ms window).
 pub const CLICK_FRAMES: usize = 1152;
-/// Peak target around -18 dBFS (~0.1259 * 32767 = 4125).
-pub const TARGET_PEAK_I16: i16 = 4125;
+/// Audible tactile wooden knock peak for laptop speakers (~73% full scale).
+pub const TARGET_PEAK_I16: i16 = 24_000;
 
 pub const VK_CAPITAL_U16: u16 = 0x14;
 pub const SCAN_CAPITAL: u16 = 0x3A;
@@ -48,22 +48,22 @@ pub const SCAN_SCROLL: u16 = 0x46;
 
 /// Minimum typing gap required before starting a Caps Lock blink (`ARCHITECTURE.md` §3.4).
 pub const CAPS_MIN_GAP_MS: u32 = 80;
-/// Hold time between toggle #1 and toggle #2 (well within <= 120 ms budget).
-const BLINK_HOLD_MS: u64 = 50;
+const BLINK_HOLD_MS: u64 = 75;
+const BLINK_GAP_MS: u64 = 50;
 const BLINK_SLICE_MS: u64 = 5;
 
-/// Deterministically synthesize the 24 ms 48 kHz 16-bit mono low-passed "wooden knock" click sample.
+/// Deterministically synthesize the 24 ms 48 kHz 16-bit mono tactile "wooden knock" click sample.
 pub fn generate_click_pcm() -> [i16; CLICK_FRAMES] {
     let mut raw = [0.0f64; CLICK_FRAMES];
     let sr = SAMPLE_RATE as f64;
-    let attack_samples = 72.0; // 1.5 ms raised-cosine attack
-    let decay_tau = 0.0045; // 4.5 ms exponential decay
+    let attack_samples = 48.0; // 1.0 ms crisp attack
+    let decay_tau = 0.0055; // 5.5 ms exponential body decay
     let mut phase = 0.0f64;
 
     for (i, slot) in raw.iter_mut().enumerate() {
         let t = (i as f64) / sr;
-        // Pitch drops quickly from 185 Hz to 108 Hz like a muted wooden keycap thud.
-        let freq = 108.0 + 77.0 * (-t / 0.006).exp();
+        // Midrange wooden knock pitch sweep (580 Hz -> 270 Hz) audible on laptop speakers.
+        let freq = 270.0 + 310.0 * (-t / 0.0045).exp();
         phase += 2.0 * PI * freq / sr;
 
         let attack = if (i as f64) < attack_samples {
@@ -72,12 +72,12 @@ pub fn generate_click_pcm() -> [i16; CLICK_FRAMES] {
             1.0
         };
         let env = attack * (-t / decay_tau).exp();
-        // Fundamental + soft second harmonic before low-pass filtering:
-        *slot = env * (phase.sin() + 0.25 * (2.0 * phase).sin());
+        let click_transient = (-t / 0.0018).exp() * (2.0 * PI * 1650.0 * t).sin();
+        *slot = env * (phase.sin() + 0.55 * (2.0 * phase).sin() + 0.35 * click_transient);
     }
 
-    // One-pole low-pass filter at fc = 320 Hz to remove high-frequency harshness.
-    let rc = 1.0 / (2.0 * PI * 320.0);
+    // One-pole low-pass filter at fc = 2200 Hz to keep warmth while preserving laptop speaker clarity.
+    let rc = 1.0 / (2.0 * PI * 2200.0);
     let dt = 1.0 / sr;
     let alpha = dt / (rc + dt);
     let mut filtered = [0.0f64; CLICK_FRAMES];
@@ -300,9 +300,8 @@ pub fn inject_lock_toggle(vk: u16, scan_code: u16) -> bool {
     sent == inputs.len() as u32
 }
 
-/// Execute one net-zero LED blink on `Scroll Lock` or `Caps Lock` (`ARCHITECTURE.md` §3.4, `AGENTS.md` #8).
-/// Captures original toggle state, toggles once, holds up to 50 ms (aborting immediately if a real
-/// keystroke arrives or pause is engaged), toggles back, and verifies net-zero state restoration.
+/// Execute a net-zero double LED blink on `Scroll Lock` or `Caps Lock` (`ARCHITECTURE.md` §3.4, `AGENTS.md` #8).
+/// Each pulse is strictly paired (Toggle ON + Toggle OFF) and aborts immediately if a real keystroke arrives.
 pub fn blink_led_net_zero(mode: LedMode) -> bool {
     let (vk, scan) = match mode {
         LedMode::ScrollLock => (VK_SCROLL_U16, SCAN_SCROLL),
@@ -312,21 +311,36 @@ pub fn blink_led_net_zero(mode: LedMode) -> bool {
     let orig_toggled = is_lock_key_toggled(vk);
     let seq0 = hooks::real_key_seq();
 
-    // Toggle #1: if SendInput fails (e.g. locked desktop / UIPI), 0 toggles were injected -> net-zero preserved.
-    if !inject_lock_toggle(vk, scan) {
-        return is_lock_key_toggled(vk) == orig_toggled;
-    }
-
-    let slices = BLINK_HOLD_MS / BLINK_SLICE_MS;
-    for _ in 0..slices {
+    for pulse in 0..2 {
         if hooks::is_paused() || hooks::real_key_seq() != seq0 {
             break;
         }
-        thread::sleep(Duration::from_millis(BLINK_SLICE_MS));
-    }
+        // Toggle #1 (ON): if SendInput fails, 0 toggles were injected -> net-zero preserved.
+        if !inject_lock_toggle(vk, scan) {
+            break;
+        }
 
-    // Toggle #2: always pair with Toggle #1 so the total injected toggle count is strictly even (2).
-    let _ = inject_lock_toggle(vk, scan);
+        let slices = BLINK_HOLD_MS / BLINK_SLICE_MS;
+        for _ in 0..slices {
+            if hooks::is_paused() || hooks::real_key_seq() != seq0 {
+                break;
+            }
+            thread::sleep(Duration::from_millis(BLINK_SLICE_MS));
+        }
+
+        // Toggle #2 (OFF): always paired with Toggle #1 so injected toggle count is strictly even.
+        let _ = inject_lock_toggle(vk, scan);
+
+        if pulse == 0 && !hooks::is_paused() && hooks::real_key_seq() == seq0 {
+            let gap_slices = BLINK_GAP_MS / BLINK_SLICE_MS;
+            for _ in 0..gap_slices {
+                if hooks::is_paused() || hooks::real_key_seq() != seq0 {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(BLINK_SLICE_MS));
+            }
+        }
+    }
 
     // Wait up to 30 ms for the OS input queue to reflect the restored state.
     for _ in 0..6 {
@@ -520,10 +534,10 @@ mod tests {
         assert_eq!(pcm[0], 0);
         assert_eq!(pcm[CLICK_FRAMES - 1], 0);
 
-        // Peak amplitude around -18 dBFS (TARGET_PEAK_I16 = 4125):
+        // Peak amplitude around TARGET_PEAK_I16 (24_000):
         let peak = pcm.iter().map(|&s| (s as i32).abs()).max().unwrap_or(0);
         assert!(
-            (4000..=4250).contains(&peak),
+            (23_000..=25_000).contains(&peak),
             "unexpected peak amplitude {}",
             peak
         );

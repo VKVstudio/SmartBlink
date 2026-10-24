@@ -229,6 +229,8 @@ pub fn plan_word_fix(
         best_alt?.0
     };
 
+    let run = expand_erroneous_burst_run(word_buf_slots, current_table, target_table);
+    let original_text = current_table.render_keys(run)?;
     let replacement_text = target_table.render_keys(run)?;
     if replacement_text.is_empty() || replacement_text == original_text {
         return None;
@@ -242,6 +244,64 @@ pub fn plan_word_fix(
         replacement_text,
         backspace_count,
     })
+}
+
+/// Walk backwards from the last word in `word_buf_slots` to include any immediately preceding
+/// words in the same burst that were also typed in the wrong layout, while stopping at any word
+/// that is valid in `current_table` (e.g. `"Hello "` in `"Hello ghbdtn"`).
+fn expand_erroneous_burst_run<'a>(
+    word_buf_slots: &'a [KeyStrokeSlot],
+    current_table: &LayoutLayerTable,
+    target_table: &LayoutLayerTable,
+) -> &'a [KeyStrokeSlot] {
+    let base_run = layout::last_word_run_for_fix(word_buf_slots);
+    if base_run.is_empty() {
+        return base_run;
+    }
+    let mut start_idx = word_buf_slots.len().saturating_sub(base_run.len());
+    let cur_prof = profile::profile_for_primary_lang(current_table.primary_lang);
+    let dst_prof = profile::profile_for_primary_lang(target_table.primary_lang);
+
+    while start_idx > 0 {
+        // Skip spaces immediately preceding `start_idx`.
+        let mut word_end = start_idx;
+        while word_end > 0 && word_buf_slots[word_end - 1].vk == VK_SPACE {
+            word_end -= 1;
+        }
+        if word_end == 0 {
+            break;
+        }
+        let mut word_start = word_end;
+        while word_start > 0 && word_buf_slots[word_start - 1].vk != VK_SPACE {
+            word_start -= 1;
+        }
+        let prev_word_slots = &word_buf_slots[word_start..word_end];
+        let Some(cur_str) = current_table.render_keys(prev_word_slots) else {
+            break;
+        };
+        let Some(dst_str) = target_table.render_keys(prev_word_slots) else {
+            break;
+        };
+
+        let char_len = cur_str.chars().count();
+        let is_also_wrong_layout = if char_len >= profile::MIN_WORD_LEN {
+            let cur_s = cur_prof.map(|p| p.score_word(&cur_str)).unwrap_or(0);
+            let dst_s = dst_prof.map(|p| p.score_word(&dst_str)).unwrap_or(0);
+            cur_s <= profile::CURRENT_MAX_PLAUSIBLE_SCORE && dst_s > cur_s
+        } else {
+            // Short 1..3-char word (e.g. "yt" -> "не", "b" -> "и", "d" -> "в"): include only if
+            // there is another wrong-layout word before it in the same burst.
+            word_start > 0
+        };
+
+        if is_also_wrong_layout {
+            start_idx = word_start;
+        } else {
+            break;
+        }
+    }
+
+    &word_buf_slots[start_idx..]
 }
 
 /// Plan a fix using `LayoutCache` for the session's active `HKL`s.

@@ -11,10 +11,11 @@ use windows::Win32::Graphics::Gdi::{GetStockObject, HBRUSH, DEFAULT_GUI_FONT};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetDlgItem, IsWindow, RegisterClassW,
-    SendMessageW, SetForegroundWindow, SetWindowTextW, ShowWindow, HMENU, SW_SHOWNORMAL,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_SETFONT,
-    WNDCLASSW, WS_CAPTION, WS_CHILD, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetDlgItem, GetSystemMetrics, IsWindow,
+    RegisterClassW, SendMessageW, SetForegroundWindow, SetWindowTextW, ShowWindow, HMENU,
+    SM_CXSCREEN, SM_CYSCREEN, SW_SHOWNORMAL, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
+    WM_CREATE, WM_DESTROY, WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_OVERLAPPED, WS_SYSMENU,
+    WS_TABSTOP, WS_VISIBLE,
 };
 
 static SETTINGS_HWND: AtomicIsize = AtomicIsize::new(0);
@@ -57,16 +58,23 @@ pub fn show_settings_window() {
             let _ = RegisterClassW(&wc);
         });
 
+        let wnd_w = 620;
+        let wnd_h = 430;
+        let screen_w = GetSystemMetrics(SM_CXSCREEN);
+        let screen_h = GetSystemMetrics(SM_CYSCREEN);
+        let pos_x = ((screen_w - wnd_w) / 2).max(40);
+        let pos_y = ((screen_h - wnd_h) / 2).max(40);
+
         let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE;
         if let Ok(hwnd) = CreateWindowExW(
             WINDOW_EX_STYLE(0),
             cls,
             w!("SmartBlink — Settings"),
             style,
-            240,
-            180,
-            460,
-            370,
+            pos_x,
+            pos_y,
+            wnd_w,
+            wnd_h,
             None,
             None,
             hinst,
@@ -229,9 +237,9 @@ unsafe fn create_controls(hwnd: HWND) {
             cls,
             text,
             WS_CHILD | WS_VISIBLE | style,
-            20,
+            24,
             y,
-            405,
+            556,
             h,
             hwnd,
             HMENU(id as isize as *mut _),
@@ -242,25 +250,25 @@ unsafe fn create_controls(hwnd: HWND) {
         }
     };
 
-    add_child(w!("STATIC"), w!(""), WINDOW_STYLE(0), 16, 38, IDC_STATUS_LABEL);
-    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 64, 34, IDC_BTN_NOTIFY);
-    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 106, 34, IDC_BTN_LED);
-    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 148, 34, IDC_BTN_FIX);
-    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 190, 34, IDC_BTN_AUTOSTART);
+    add_child(w!("STATIC"), w!(""), WINDOW_STYLE(0), 18, 48, IDC_STATUS_LABEL);
+    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 76, 40, IDC_BTN_NOTIFY);
+    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 126, 40, IDC_BTN_LED);
+    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 176, 40, IDC_BTN_FIX);
+    add_child(w!("BUTTON"), w!(""), WS_TABSTOP, 226, 40, IDC_BTN_AUTOSTART);
     add_child(
         w!("BUTTON"),
         w!(""),
         WS_TABSTOP,
-        232,
-        34,
+        276,
+        40,
         IDC_BTN_ELEVATED_TASK,
     );
     add_child(
         w!("BUTTON"),
         w!("Open config.toml in Editor"),
         WS_TABSTOP,
-        278,
-        32,
+        330,
+        38,
         IDC_BTN_OPEN_CONFIG,
     );
 }

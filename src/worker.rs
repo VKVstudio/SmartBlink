@@ -322,6 +322,7 @@ pub fn start(
             let mut signal = SignalEngine::start(notify_mode, led_mode);
             let mut last_verdict: Option<DetectionVerdict> = None;
             let mut word_blinked = false;
+            let mut pending_caps_blink = false;
             let mut word_alerted = false;
             let mut last_key_instant: Option<Instant> = None;
             let mut seen_cfg_rev = crate::config::config_revision();
@@ -349,6 +350,7 @@ pub fn start(
                         last_verdict = None;
                     }
                     word_blinked = false;
+                    pending_caps_blink = false;
                     word_alerted = false;
                     last_key_instant = None;
                     global_ring().clear_and_zero();
@@ -368,6 +370,7 @@ pub fn start(
                         last_verdict = None;
                     }
                     word_blinked = false;
+                    pending_caps_blink = false;
                     word_alerted = false;
                     last_key_instant = None;
                 }
@@ -385,7 +388,7 @@ pub fn start(
                     }
 
                     // Stubborn user whitelist (ARCHITECTURE.md §3.7): if an alert was raised for the
-                    // current word and the user presses Space or Enter without fixing, whitelist it.
+                    // current word and the user presses Space or Enter without fixing, increment ignore count.
                     if word_alerted
                         && rec.kind == InputKind::KeyDown
                         && (rec.vk == VK_SPACE || rec.vk == VK_RETURN)
@@ -396,7 +399,7 @@ pub fn start(
                             if let Some(rendered) =
                                 layout_cache.get_or_build(cur_hkl).render_keys(active_word)
                             {
-                                whitelist.add_word(&rendered, cur_hkl);
+                                whitelist.record_ignored_word(&rendered, cur_hkl);
                             }
                         }
                         word_alerted = false;
@@ -434,6 +437,7 @@ pub fn start(
                         zero_and_clear_vec(&mut ctrl_snapshot);
                         last_verdict = None;
                         word_blinked = false;
+                        pending_caps_blink = false;
                         word_alerted = false;
                         last_key_instant = None;
                         had_typing_key = false;
@@ -460,6 +464,7 @@ pub fn start(
                         zero_and_clear_vec(&mut ctrl_snapshot);
                         last_verdict = None;
                         word_blinked = false;
+                        pending_caps_blink = false;
                         word_alerted = false;
                         last_key_instant = None;
                         had_typing_key = false;
@@ -468,6 +473,7 @@ pub fn start(
 
                     if word_buf.is_empty() {
                         word_blinked = false;
+                        pending_caps_blink = false;
                         word_alerted = false;
                     } else if rec.kind == InputKind::KeyDown && word_buf.len() != prev_len {
                         had_typing_key = true;
@@ -501,14 +507,19 @@ pub fn start(
                         if last_verdict.is_some() && !focus.refresh_password_immunity() {
                             word_alerted = true;
                             signal.trigger_click();
-                            if !word_blinked && signal.led_mode() == LedMode::ScrollLock {
-                                signal.trigger_blink();
-                                word_blinked = true;
+                            if !word_blinked {
+                                if signal.led_mode() == LedMode::ScrollLock {
+                                    signal.trigger_blink();
+                                    word_blinked = true;
+                                } else {
+                                    pending_caps_blink = true;
+                                }
                             }
                         } else if focus.refresh_password_immunity() {
                             word_buf.reset();
                             last_verdict = None;
                             word_blinked = false;
+                            pending_caps_blink = false;
                             word_alerted = false;
                         }
                     } else {
@@ -516,9 +527,9 @@ pub fn start(
                     }
                 }
 
-                // CapsLockGuarded mode: trigger pending blink only when in a typing gap >= 80 ms.
-                if !word_blinked
-                    && last_verdict.is_some()
+                // CapsLockGuarded mode: trigger pending blink when in a typing gap >= 80 ms
+                // (even if the user just pressed Space at the end of the word).
+                if pending_caps_blink
                     && signal.led_mode() == LedMode::CapsLockGuarded
                     && !status.is_immune
                 {
@@ -528,6 +539,7 @@ pub fn start(
                         {
                             signal.trigger_blink();
                             word_blinked = true;
+                            pending_caps_blink = false;
                         }
                     }
                 }

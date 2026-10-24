@@ -41,6 +41,7 @@ const CF_GDIOBJFIRST: u32 = 0x0300;
 const CF_GDIOBJLAST: u32 = 0x03FF;
 
 const MAX_WHITELIST_ENTRIES: usize = 256;
+pub const WHITELIST_MIN_IGNORES: u8 = 3;
 
 const VK_SHIFT: u16 = 0x10;
 const VK_CONTROL: u16 = 0x11;
@@ -61,6 +62,7 @@ const VK_RMENU: u16 = 0xA5;
 struct WhitelistEntry {
     word_hash: u64,
     hkl: isize,
+    count: u8,
 }
 
 impl WhitelistEntry {
@@ -68,6 +70,7 @@ impl WhitelistEntry {
         Self {
             word_hash: 0,
             hkl: 0,
+            count: 0,
         }
     }
 }
@@ -111,8 +114,17 @@ impl SessionWhitelist {
         self.cursor = 0;
     }
 
-    /// Record a word (and its prefixes of length `>= MIN_WORD_LEN`) for `hkl` in the session whitelist.
+    /// Immediately whitelist `word` (and its prefixes of length `>= MIN_WORD_LEN`) for `hkl`.
+    #[allow(dead_code)]
     pub fn add_word(&mut self, word: &str, hkl: HKL) {
+        for _ in 0..WHITELIST_MIN_IGNORES {
+            self.record_ignored_word(word, hkl);
+        }
+    }
+
+    /// Record one ignored alert for `word` under `hkl`. Once ignored `WHITELIST_MIN_IGNORES` (3) times
+    /// in the session without fixing, the word and its prefixes become whitelisted for the session.
+    pub fn record_ignored_word(&mut self, word: &str, hkl: HKL) {
         let chars: Vec<char> = word
             .trim()
             .chars()
@@ -124,14 +136,11 @@ impl SessionWhitelist {
         }
         for prefix_len in profile::MIN_WORD_LEN..=chars.len() {
             let hash = hash_char_slice(&chars[..prefix_len]);
-            self.insert_entry(WhitelistEntry {
-                word_hash: hash,
-                hkl: hkl.0 as isize,
-            });
+            self.increment_entry(hash, hkl.0 as isize);
         }
     }
 
-    /// Returns `true` if `word` under `hkl` is in the session whitelist.
+    /// Returns `true` if `word` under `hkl` has reached the stubborn-user whitelist threshold.
     pub fn is_whitelisted(&self, word: &str, hkl: HKL) -> bool {
         let chars: Vec<char> = word
             .trim()
@@ -146,14 +155,21 @@ impl SessionWhitelist {
         let raw_hkl = hkl.0 as isize;
         self.entries[..self.len]
             .iter()
-            .any(|e| e.word_hash == hash && e.hkl == raw_hkl)
+            .any(|e| e.word_hash == hash && e.hkl == raw_hkl && e.count >= WHITELIST_MIN_IGNORES)
     }
 
-    fn insert_entry(&mut self, entry: WhitelistEntry) {
-        if self.entries[..self.len].contains(&entry) {
-            return;
+    fn increment_entry(&mut self, word_hash: u64, hkl: isize) {
+        for e in &mut self.entries[..self.len] {
+            if e.word_hash == word_hash && e.hkl == hkl {
+                e.count = e.count.saturating_add(1);
+                return;
+            }
         }
-        self.entries[self.cursor] = entry;
+        self.entries[self.cursor] = WhitelistEntry {
+            word_hash,
+            hkl,
+            count: 1,
+        };
         self.cursor = (self.cursor + 1) % MAX_WHITELIST_ENTRIES;
         if self.len < MAX_WHITELIST_ENTRIES {
             self.len += 1;
