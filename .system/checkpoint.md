@@ -1,6 +1,6 @@
 # Checkpoint — SmartBlink
 
-`Current Phase`: M10 complete (`installer/SmartBlink.iss` compiled cleanly via `ISCC.exe` -> `target\installer\SmartBlink-Setup-1.0.0.exe`). Ready for M11.
+`Current Phase`: M11 complete (CI release workflow, MIT LICENSE, EN/RU READMEs, CONTRIBUTING, docs/CONFIG.md, docs/PRIVACY.md, docs/BUILDING.md). Ready for M12.
 `Approved Stack`: Rust (`x86_64-pc-windows-gnullvm` via LLVM-MinGW UCRT; MSVC/Windows SDK forbidden), `windows` crate 0.58, Win32 tray + Settings window, hand-rolled flat TOML config in `%APPDATA%\SmartBlink\config.toml`, WASAPI shared audio, Inno Setup 6 installer (per-user default `{autopf}`, optional elevated ONLOGON scheduled task). License MIT. Publisher `VKV Studio` / vkvstudio.com. Min OS: Windows 10 1809. Default fix hotkey: double Left Shift. Default alert mode: Both (audio + LED), LED defaults to Scroll Lock.
 
 ## Completed
@@ -26,17 +26,18 @@
   - `src/autostart.rs`: `HKCU\...\Run\SmartBlink` registration + opt-in elevated scheduled task (`ONLOGON`, `RL HIGHEST`) and `TokenElevation` check.
   - `src/settings.rs`: pure Win32 Settings window (`SmartBlinkSettingsWnd`).
   - `src/tray.rs` & `src/config.rs` & `src/worker.rs`: full tray popup menu + live atomic config reload.
-- M10 complete:
-  - `installer/SmartBlink.iss`: Inno Setup 6 installer script (`PrivilegesRequired=lowest`, `PrivilegesRequiredOverridesAllowed=dialog`, `{autopf}\SmartBlink`, EN/RU languages, optional HKCU Run & elevated ONLOGON task checkboxes, graceful `WM_CLOSE` + `taskkill` fallback, clean uninstall with optional settings cleanup).
-  - Compiled via `C:\Users\user\AppData\Local\Programs\Inno Setup 6\ISCC.exe installer\SmartBlink.iss` -> `target\installer\SmartBlink-Setup-1.0.0.exe`.
+- M10 complete (`4de994e`):
+  - `installer/SmartBlink.iss`: Inno Setup 6 installer script compiled via `ISCC.exe` -> `target\installer\SmartBlink-Setup-1.0.0.exe`.
+- M11 complete:
+  - `.github/workflows/release.yml`, `LICENSE`, `README.md`, `README.ru.md`, `CONTRIBUTING.md`, `docs/CONFIG.md`, `docs/PRIVACY.md`, `docs/BUILDING.md`.
 
 ## Verified
 - `cargo build --release`: 0 warnings, produces `target\x86_64-pc-windows-gnullvm\release\smartblink.exe`.
 - `cargo test --release`: `test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`.
-- `ISCC.exe installer\SmartBlink.iss`: `Successful compile (1,813 sec)` -> `target\installer\SmartBlink-Setup-1.0.0.exe`.
+- `ISCC.exe installer\SmartBlink.iss`: `Successful compile` -> `target\installer\SmartBlink-Setup-1.0.0.exe`.
 
 ## Next Immediate Task
-M11 — GitHub Actions release workflow (`.github/workflows/release.yml`), `LICENSE`, `README.md` (EN), `README.ru.md` (RU), `CONTRIBUTING.md`, `docs/CONFIG.md`, `docs/PRIVACY.md`, `docs/BUILDING.md` (`ARCHITECTURE.md` §4, §5, §6).
+M12 — Release 1.0.0 version bump (`Cargo.toml`, `assets/version.rc`), rebuild release binary & installer, generate `SHA256SUMS.txt` & release notes, final local commit (`ARCHITECTURE.md` §6).
 
 ## Blockers
 - None. (`iscc` for Inno Setup 6 needed only at M10.)

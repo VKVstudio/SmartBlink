@@ -241,3 +241,15 @@ Read `AGENTS.md`, `.system/checkpoint.md`. Execute M10 (`ARCHITECTURE.md` §4, �
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. Execute M11 (`ARCHITECTURE.md` §4, §5, §6).
+
+## Session #015 — 2026-10-24 — M11 implementation (GitHub Actions release workflow, LICENSE, README EN/RU, CONTRIBUTING, docs)
+
+**Done**
+- Created `.github/workflows/release.yml` (LLVM-MinGW + Rust `x86_64-pc-windows-gnullvm` + unit tests + release binary + Inno Setup 6 installer + `SHA256SUMS.txt` + GitHub Release artifact upload).
+- Created `LICENSE` (MIT, `VKV Studio`), `README.md` (EN), `README.ru.md` (RU), `CONTRIBUTING.md`, `docs/CONFIG.md`, `docs/PRIVACY.md`, and `docs/BUILDING.md`.
+
+**Verified**
+- All documentation and CI workflow files reviewed and checked against `ARCHITECTURE.md` §4 & §5.
+
+**Next agent**
+Read `AGENTS.md`, `.system/checkpoint.md`. Execute M12 (`ARCHITECTURE.md` §6).
