@@ -18,6 +18,8 @@
 //! - bigrams:  `[(u16, i8); bigram_count]` sorted by `u16` key ascending (`(i0 << 8) | i1`)
 //! - trigrams: `[(u32, i8); trigram_count]` sorted by `u32` key ascending (`(i0 << 16) | (i1 << 8) | i2`)
 
+mod corpora;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -27,9 +29,32 @@ const VERSION: u8 = 1;
 
 pub const SCRIPT_LATIN: u8 = 1;
 pub const SCRIPT_CYRILLIC: u8 = 2;
+pub const SCRIPT_ARMENIAN: u8 = 3;
+pub const SCRIPT_GEORGIAN: u8 = 4;
+pub const SCRIPT_HEBREW: u8 = 5;
+pub const SCRIPT_ARABIC: u8 = 6;
+pub const SCRIPT_GREEK: u8 = 7;
 
+pub const LANG_ARABIC: u16 = 0x01;
+pub const LANG_CZECH: u16 = 0x05;
+pub const LANG_GERMAN: u16 = 0x07;
+pub const LANG_GREEK: u16 = 0x08;
 pub const LANG_ENGLISH: u16 = 0x09;
+pub const LANG_SPANISH: u16 = 0x0A;
+pub const LANG_FRENCH: u16 = 0x0C;
+pub const LANG_HEBREW: u16 = 0x0D;
+pub const LANG_ITALIAN: u16 = 0x10;
+pub const LANG_DUTCH: u16 = 0x13;
+pub const LANG_POLISH: u16 = 0x15;
+pub const LANG_PORTUGUESE: u16 = 0x16;
 pub const LANG_RUSSIAN: u16 = 0x19;
+pub const LANG_SWEDISH: u16 = 0x1D;
+pub const LANG_TURKISH: u16 = 0x1F;
+pub const LANG_UKRAINIAN: u16 = 0x22;
+pub const LANG_BELARUSIAN: u16 = 0x23;
+pub const LANG_ARMENIAN: u16 = 0x2B;
+pub const LANG_GEORGIAN: u16 = 0x37;
+pub const LANG_KAZAKH: u16 = 0x3F;
 
 struct LangSpec<'a> {
     file_name: &'a str,
@@ -204,17 +229,163 @@ fn main() {
             vowels: "аеёиоуыэюя",
             corpus: RU_CORPUS,
         },
+        LangSpec {
+            file_name: "uk.bin",
+            script: SCRIPT_CYRILLIC,
+            primary_lang: LANG_UKRAINIAN,
+            alphabet: "абвгґдеєжзиіїйклмнопрстуфхцчшщьюя",
+            vowels: "аеєиіїоуюя",
+            corpus: corpora::UK_CORPUS,
+        },
+        LangSpec {
+            file_name: "be.bin",
+            script: SCRIPT_CYRILLIC,
+            primary_lang: LANG_BELARUSIAN,
+            alphabet: "абвгдеёжзійклмнопрстуўфхцчшыьэюя",
+            vowels: "аеёіоуыэюя",
+            corpus: corpora::BE_CORPUS,
+        },
+        LangSpec {
+            file_name: "kk.bin",
+            script: SCRIPT_CYRILLIC,
+            primary_lang: LANG_KAZAKH,
+            alphabet: "аәбвгғдеёжзийкқлмнңоөпрстуұүфхһцчшщъыіьэюя",
+            vowels: "аәеёиоөуұүыіэюя",
+            corpus: corpora::KK_CORPUS,
+        },
+        LangSpec {
+            file_name: "de.bin",
+            script: SCRIPT_LATIN,
+            primary_lang: LANG_GERMAN,
+            alphabet: "abcdefghijklmnopqrstuvwxyzäöüß",
+            vowels: "aeiouyäöü",
+            corpus: corpora::DE_CORPUS,
+        },
+        LangSpec {
+            file_name: "fr.bin",
+            script: SCRIPT_LATIN,
+            primary_lang: LANG_FRENCH,
+            alphabet: "abcdefghijklmnopqrstuvwxyzàâçéèêëîïôùûüœ",
+            vowels: "aeiouyàâéèêëîïôùûüœ",
+            corpus: corpora::FR_CORPUS,
+        },
+        LangSpec {
+            file_name: "es.bin",
+            script: SCRIPT_LATIN,
+            primary_lang: LANG_SPANISH,
+            alphabet: "abcdefghijklmnopqrstuvwxyzáéíñóúü",
+            vowels: "aeiouyáéíóúü",
+            corpus: corpora::ES_CORPUS,
+        },
+        LangSpec {
+            file_name: "pt.bin",
+            script: SCRIPT_LATIN,
+            primary_lang: LANG_PORTUGUESE,
+            alphabet: "abcdefghijklmnopqrstuvwxyzàáâãçéêíóôõú",
+            vowels: "aeiouyàáâãéêíóôõú",
+            corpus: corpora::PT_CORPUS,
+        },
+        LangSpec {
+            file_name: "it.bin",
+            script: SCRIPT_LATIN,
+            primary_lang: LANG_ITALIAN,
+            alphabet: "abcdefghijklmnopqrstuvwxyzàèéìòù",
+            vowels: "aeiouyàèéìòù",
+            corpus: corpora::IT_CORPUS,
+        },
+        LangSpec {
+            file_name: "tr.bin",
+            script: SCRIPT_LATIN,
+            primary_lang: LANG_TURKISH,
+            alphabet: "abcçdefgğhıijklmnoöprsştuüvyz",
+            vowels: "aeıioöuü",
+            corpus: corpora::TR_CORPUS,
+        },
+        LangSpec {
+            file_name: "pl.bin",
+            script: SCRIPT_LATIN,
+            primary_lang: LANG_POLISH,
+            alphabet: "aąbcćdeęfghijklłmnńoóprsśtuwyzźż",
+            vowels: "aąeęioóuy",
+            corpus: corpora::PL_CORPUS,
+        },
+        LangSpec {
+            file_name: "nl.bin",
+            script: SCRIPT_LATIN,
+            primary_lang: LANG_DUTCH,
+            alphabet: "abcdefghijklmnopqrstuvwxyz",
+            vowels: "aeiouy",
+            corpus: corpora::NL_CORPUS,
+        },
+        LangSpec {
+            file_name: "sv.bin",
+            script: SCRIPT_LATIN,
+            primary_lang: LANG_SWEDISH,
+            alphabet: "abcdefghijklmnopqrstuvwxyzåäö",
+            vowels: "aeiouyåäö",
+            corpus: corpora::SV_CORPUS,
+        },
+        LangSpec {
+            file_name: "cs.bin",
+            script: SCRIPT_LATIN,
+            primary_lang: LANG_CZECH,
+            alphabet: "aábcčdďeéěfghiíjklmnňoópqrřsštťuúůvwxyýzž",
+            vowels: "aáeéěiíoóuúůyý",
+            corpus: corpora::CS_CORPUS,
+        },
+        LangSpec {
+            file_name: "el.bin",
+            script: SCRIPT_GREEK,
+            primary_lang: LANG_GREEK,
+            alphabet: "αάβγδεέζηήθιίϊΐκλμνξοόπρσςτυύϋΰφχψωώ",
+            vowels: "αάεέηήιίϊΐοόυύϋΰωώ",
+            corpus: corpora::EL_CORPUS,
+        },
+        LangSpec {
+            file_name: "he.bin",
+            script: SCRIPT_HEBREW,
+            primary_lang: LANG_HEBREW,
+            alphabet: "אבגדהוזחטיךכלםמןנסעףפץצקרשת",
+            vowels: "אהويאע",
+            corpus: corpora::HE_CORPUS,
+        },
+        LangSpec {
+            file_name: "ar.bin",
+            script: SCRIPT_ARABIC,
+            primary_lang: LANG_ARABIC,
+            alphabet: "ءآأؤإئابةتثجحخدذرزسشصضطظعغفقكلمنهوىي",
+            vowels: "اأإآوىي",
+            corpus: corpora::AR_CORPUS,
+        },
+        LangSpec {
+            file_name: "hy.bin",
+            script: SCRIPT_ARMENIAN,
+            primary_lang: LANG_ARMENIAN,
+            alphabet: "աբգդեզէըթժիլխծկհձղճմյնշոչպջռսվտրցւփքօֆև",
+            vowels: "աեէըիոօև",
+            corpus: corpora::HY_CORPUS,
+        },
+        LangSpec {
+            file_name: "ka.bin",
+            script: SCRIPT_GEORGIAN,
+            primary_lang: LANG_GEORGIAN,
+            alphabet: "აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწჭხჯჰ",
+            vowels: "აეიოუ",
+            corpus: corpora::KA_CORPUS,
+        },
     ];
 
     let out_dir = Path::new("assets/profiles");
     fs::create_dir_all(out_dir).expect("create assets/profiles directory");
 
+    let mut total_bytes = 0usize;
     for spec in &specs {
         let bytes = build_profile_bytes(spec);
         let path = out_dir.join(spec.file_name);
         fs::write(&path, &bytes).expect("write profile bin");
         let bg = u16::from_le_bytes([bytes[18], bytes[19]]);
         let tg = u16::from_le_bytes([bytes[20], bytes[21]]);
+        total_bytes += bytes.len();
         println!(
             "Generated {}: {} bytes ({} bigrams, {} trigrams)",
             path.display(),
@@ -223,4 +394,5 @@ fn main() {
             tg
         );
     }
+    println!("Total size across {} profiles: {} bytes", specs.len(), total_bytes);
 }

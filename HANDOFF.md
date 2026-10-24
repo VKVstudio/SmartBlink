@@ -182,3 +182,17 @@ Read `AGENTS.md`, `.system/checkpoint.md`. Execute M6 (`ARCHITECTURE.md` §3.1, 
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. Execute M7 (`ARCHITECTURE.md` §3.3, §6).
+
+## Session #011 — 2026-10-24 — M7 implementation (20 built-in language profiles + intra-Latin conflict suite)
+
+**Done**
+- Created `tools/profilegen/src/corpora.rs` and updated `tools/profilegen/src/main.rs` + `assets/profiles/LICENSES.md` for all 20 built-in languages (`en, ru, uk, be, kk, de, fr, es, pt, it, tr, pl, nl, sv, cs, el, he, ar, hy, ka`).
+- Generated `assets/profiles/*.bin` (20 files, `54,191` bytes total, well within the 600 KB budget).
+- Updated `src/profile.rs` to embed all 20 profiles (`EMBEDDED_PROFILE_BLOBS`, `all_profiles()`) and added `intra_latin_and_multi_script_conflict_suite_de_fr_tr_pl_uk` verifying zero false positives on shared intra-Latin vocabulary (`system`, `program`, `function`) and positive detection on physical layout conflicts (QWERTZ `y`/`z`, AZERTY `a`/`q`/`z`/`w`).
+
+**Verified**
+- `cargo build --release` → 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe`.
+- `cargo test --release` → `test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s`.
+
+**Next agent**
+Read `AGENTS.md`, `.system/checkpoint.md`. Execute M8 (`ARCHITECTURE.md` §3.6, §3.7, §6).

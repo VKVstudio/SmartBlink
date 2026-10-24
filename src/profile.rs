@@ -12,8 +12,26 @@ use crate::worker::KeyStrokeSlot;
 use std::sync::OnceLock;
 use windows::Win32::UI::Input::KeyboardAndMouse::HKL;
 
+pub const LANG_ARABIC: u16 = 0x01;
+pub const LANG_CZECH: u16 = 0x05;
+pub const LANG_GERMAN: u16 = 0x07;
+pub const LANG_GREEK: u16 = 0x08;
 pub const LANG_ENGLISH: u16 = 0x09;
+pub const LANG_SPANISH: u16 = 0x0A;
+pub const LANG_FRENCH: u16 = 0x0C;
+pub const LANG_HEBREW: u16 = 0x0D;
+pub const LANG_ITALIAN: u16 = 0x10;
+pub const LANG_DUTCH: u16 = 0x13;
+pub const LANG_POLISH: u16 = 0x15;
+pub const LANG_PORTUGUESE: u16 = 0x16;
 pub const LANG_RUSSIAN: u16 = 0x19;
+pub const LANG_SWEDISH: u16 = 0x1D;
+pub const LANG_TURKISH: u16 = 0x1F;
+pub const LANG_UKRAINIAN: u16 = 0x22;
+pub const LANG_BELARUSIAN: u16 = 0x23;
+pub const LANG_ARMENIAN: u16 = 0x2B;
+pub const LANG_GEORGIAN: u16 = 0x37;
+pub const LANG_KAZAKH: u16 = 0x3F;
 
 pub const MIN_WORD_LEN: usize = 4;
 pub const ABSOLUTE_THRESHOLD: i32 = 18;
@@ -23,8 +41,28 @@ pub const CURRENT_MAX_PLAUSIBLE_SCORE: i32 = -5;
 const OOV_IDX: u8 = 0xFF;
 const FLOOR_SCORE: i32 = -200;
 
-static EN_BYTES: &[u8] = include_bytes!("../assets/profiles/en.bin");
-static RU_BYTES: &[u8] = include_bytes!("../assets/profiles/ru.bin");
+pub static EMBEDDED_PROFILE_BLOBS: &[(u16, &[u8])] = &[
+    (LANG_ENGLISH, include_bytes!("../assets/profiles/en.bin")),
+    (LANG_RUSSIAN, include_bytes!("../assets/profiles/ru.bin")),
+    (LANG_UKRAINIAN, include_bytes!("../assets/profiles/uk.bin")),
+    (LANG_BELARUSIAN, include_bytes!("../assets/profiles/be.bin")),
+    (LANG_KAZAKH, include_bytes!("../assets/profiles/kk.bin")),
+    (LANG_GERMAN, include_bytes!("../assets/profiles/de.bin")),
+    (LANG_FRENCH, include_bytes!("../assets/profiles/fr.bin")),
+    (LANG_SPANISH, include_bytes!("../assets/profiles/es.bin")),
+    (LANG_PORTUGUESE, include_bytes!("../assets/profiles/pt.bin")),
+    (LANG_ITALIAN, include_bytes!("../assets/profiles/it.bin")),
+    (LANG_TURKISH, include_bytes!("../assets/profiles/tr.bin")),
+    (LANG_POLISH, include_bytes!("../assets/profiles/pl.bin")),
+    (LANG_DUTCH, include_bytes!("../assets/profiles/nl.bin")),
+    (LANG_SWEDISH, include_bytes!("../assets/profiles/sv.bin")),
+    (LANG_CZECH, include_bytes!("../assets/profiles/cs.bin")),
+    (LANG_GREEK, include_bytes!("../assets/profiles/el.bin")),
+    (LANG_HEBREW, include_bytes!("../assets/profiles/he.bin")),
+    (LANG_ARABIC, include_bytes!("../assets/profiles/ar.bin")),
+    (LANG_ARMENIAN, include_bytes!("../assets/profiles/hy.bin")),
+    (LANG_GEORGIAN, include_bytes!("../assets/profiles/ka.bin")),
+];
 
 #[derive(Debug, Clone)]
 pub struct LanguageProfile {
@@ -295,20 +333,27 @@ pub fn is_immune_word(rendered: &str) -> bool {
         .any(|c| c.is_ascii_digit() || c == '_' || c == '@' || c == '/' || c == '\\')
 }
 
-/// Get the static `LanguageProfile` for a Win32 primary language ID (`LANG_ENGLISH`, `LANG_RUSSIAN`).
-pub fn profile_for_primary_lang(primary_lang: u16) -> Option<&'static LanguageProfile> {
-    static EN_PROFILE: OnceLock<LanguageProfile> = OnceLock::new();
-    static RU_PROFILE: OnceLock<LanguageProfile> = OnceLock::new();
+/// Return all 20 parsed built-in `LanguageProfile` instances.
+pub fn all_profiles() -> &'static [LanguageProfile] {
+    static ALL_PROFILES: OnceLock<Vec<LanguageProfile>> = OnceLock::new();
+    ALL_PROFILES.get_or_init(|| {
+        EMBEDDED_PROFILE_BLOBS
+            .iter()
+            .map(|&(lang, bytes)| {
+                let p = LanguageProfile::from_bytes(bytes)
+                    .expect("valid embedded SMBP v1 profile binary");
+                debug_assert_eq!(p.primary_lang, lang);
+                p
+            })
+            .collect()
+    })
+}
 
-    match primary_lang {
-        LANG_ENGLISH => Some(EN_PROFILE.get_or_init(|| {
-            LanguageProfile::from_bytes(EN_BYTES).expect("valid embedded en.bin")
-        })),
-        LANG_RUSSIAN => Some(RU_PROFILE.get_or_init(|| {
-            LanguageProfile::from_bytes(RU_BYTES).expect("valid embedded ru.bin")
-        })),
-        _ => None,
-    }
+/// Get the static `LanguageProfile` for a Win32 primary language ID.
+pub fn profile_for_primary_lang(primary_lang: u16) -> Option<&'static LanguageProfile> {
+    all_profiles()
+        .iter()
+        .find(|p| p.primary_lang == primary_lang)
 }
 
 /// Evaluate a slice of keystroke slots against pre-built `LayoutLayerTable`s.
@@ -534,6 +579,15 @@ mod tests {
 
     #[test]
     fn embedded_en_and_ru_profiles_parse_validly() {
+        let profiles = all_profiles();
+        assert_eq!(profiles.len(), 20, "all 20 built-in language profiles must load");
+        let total_bytes: usize = EMBEDDED_PROFILE_BLOBS.iter().map(|(_, b)| b.len()).sum();
+        assert!(
+            total_bytes < 600 * 1024,
+            "total embedded profile size {} exceeds 600 KB budget",
+            total_bytes
+        );
+
         let en = profile_for_primary_lang(LANG_ENGLISH).expect("EN profile loads");
         let ru = profile_for_primary_lang(LANG_RUSSIAN).expect("RU profile loads");
         assert_eq!(en.primary_lang, LANG_ENGLISH);
@@ -542,6 +596,99 @@ mod tests {
         assert_eq!(ru.alphabet.len(), 33);
         assert!(!en.bigrams.is_empty() && !en.trigrams.is_empty());
         assert!(!ru.bigrams.is_empty() && !ru.trigrams.is_empty());
+    }
+
+    #[test]
+    fn intra_latin_and_multi_script_conflict_suite_de_fr_tr_pl_uk() {
+        const DE_HKL: HKL = HKL(0x04070407 as _);
+        const TR_HKL: HKL = HKL(0x041F041F as _);
+        const UK_HKL: HKL = HKL(0x04220422 as _);
+
+        // German QWERTZ: Z/Y swapped (`0x15` = 'z', `0x2C` = 'y'), `0x1A` = 'ü', `0x27` = 'ö', `0x28` = 'ä', `0x0C` = 'ß'
+        let mut de_pairs = US_LAYOUT.to_vec();
+        for entry in &mut de_pairs {
+            match entry.0 {
+                0x15 => *entry = (0x15, 'z', 'Z'),
+                0x2C => *entry = (0x2C, 'y', 'Y'),
+                0x1A => *entry = (0x1A, 'ü', 'Ü'),
+                0x27 => *entry = (0x27, 'ö', 'Ö'),
+                0x28 => *entry = (0x28, 'ä', 'Ä'),
+                _ => {}
+            }
+        }
+        de_pairs.push((0x0C, 'ß', '?'));
+        let mut us_with_dash = US_LAYOUT.to_vec();
+        us_with_dash.push((0x0C, '-', '_'));
+
+        // Turkish QWERTY: `0x1A` = 'ğ', `0x1B` = 'ü', `0x27` = 'ş', `0x28` = 'i', `0x17` = 'ı', `0x33` = 'ö', `0x34` = 'ç'
+        let mut tr_pairs = US_LAYOUT.to_vec();
+        for entry in &mut tr_pairs {
+            match entry.0 {
+                0x17 => *entry = (0x17, 'ı', 'I'),
+                0x1A => *entry = (0x1A, 'ğ', 'Ğ'),
+                0x1B => *entry = (0x1B, 'ü', 'Ü'),
+                0x27 => *entry = (0x27, 'ş', 'Ş'),
+                0x28 => *entry = (0x28, 'i', 'İ'),
+                0x33 => *entry = (0x33, 'ö', 'Ö'),
+                0x34 => *entry = (0x34, 'ç', 'Ç'),
+                _ => {}
+            }
+        }
+
+        // Ukrainian Cyrillic (`0x1F` = 'і', `0x1B` = 'ї', `0x28` = 'є')
+        let mut uk_pairs = RU_LAYOUT.to_vec();
+        for entry in &mut uk_pairs {
+            match entry.0 {
+                0x1F => *entry = (0x1F, 'і', 'І'),
+                0x1B => *entry = (0x1B, 'ї', 'Ї'),
+                0x28 => *entry = (0x28, 'є', 'Є'),
+                _ => {}
+            }
+        }
+
+        let us = LayoutLayerTable::from_pairs(US_HKL, &us_with_dash);
+        let de = LayoutLayerTable::from_pairs(DE_HKL, &de_pairs);
+        let tr = LayoutLayerTable::from_pairs(TR_HKL, &tr_pairs);
+        let uk = LayoutLayerTable::from_pairs(UK_HKL, &uk_pairs);
+        let tables = [&us, &de, &tr, &uk];
+
+        // 1. German diacritic/QWERTZ words typed while in US layout -> detected as DE:
+        for &de_word in &["zurück", "natürlich", "größe", "schön"] {
+            let keys = type_on_layout(de_word, &de_pairs);
+            let v = evaluate_tables(&keys, US_HKL, &tables)
+                .unwrap_or_else(|| panic!("expected DE detection for {:?}", de_word));
+            assert_eq!(v.target_hkl, DE_HKL);
+            assert_eq!(v.rendered_target, de_word);
+        }
+
+        // 2. Turkish words typed while in US layout -> detected as TR:
+        for &tr_word in &["teşekkür", "çalışmak"] {
+            let keys = type_on_layout(tr_word, &tr_pairs);
+            let v = evaluate_tables(&keys, US_HKL, &tables)
+                .unwrap_or_else(|| panic!("expected TR detection for {:?}", tr_word));
+            assert_eq!(v.target_hkl, TR_HKL);
+            assert_eq!(v.rendered_target, tr_word);
+        }
+
+        // 3. Ukrainian words typed while in US layout -> detected as UK:
+        for &uk_word in &["привіт", "повідомлення"] {
+            let keys = type_on_layout(uk_word, &uk_pairs);
+            let v = evaluate_tables(&keys, US_HKL, &tables)
+                .unwrap_or_else(|| panic!("expected UK detection for {:?}", uk_word));
+            assert_eq!(v.target_hkl, UK_HKL);
+            assert_eq!(v.rendered_target, uk_word);
+        }
+
+        // 4. Shared/valid English words typed in US layout alongside DE, TR, UK must NEVER false-positive:
+        for &en_word in &["system", "program", "function", "message", "hello", "world"] {
+            let keys = type_on_layout(en_word, &us_with_dash);
+            assert_eq!(
+                evaluate_tables(&keys, US_HKL, &tables),
+                None,
+                "intra-Latin false positive on {:?}",
+                en_word
+            );
+        }
     }
 
     #[test]
