@@ -189,12 +189,50 @@ def png_bytes(size: int, raw: bytes) -> bytes:
     )
 
 
+def dib_bytes(size: int, raw: bytes) -> bytes:
+    """Encode RGBA rows as a standard ICO 32-bit BGRA DIB (BITMAPINFOHEADER + bottom-up XOR + 1-bit AND)."""
+    # BITMAPINFOHEADER (40 bytes): height is 2 * size (XOR + AND masks)
+    bih = struct.pack(
+        "<IIIHHIIIIII",
+        40,
+        size,
+        size * 2,
+        1,
+        32,
+        0,  # BI_RGB
+        size * size * 4,
+        0,
+        0,
+        0,
+        0,
+    )
+    xor_mask = bytearray(size * size * 4)
+    and_row_bytes = ((size + 31) // 32) * 4
+    and_mask = bytearray(and_row_bytes * size)
+
+    for y in range(size):
+        src_y = size - 1 - y  # bottom-up
+        for x in range(size):
+            si = (src_y * size + x) * 4
+            di = (y * size + x) * 4
+            r, g, b, a = raw[si], raw[si + 1], raw[si + 2], raw[si + 3]
+            xor_mask[di] = b
+            xor_mask[di + 1] = g
+            xor_mask[di + 2] = r
+            xor_mask[di + 3] = a
+            if a < 16:
+                byte_idx = y * and_row_bytes + (x >> 3)
+                and_mask[byte_idx] |= 0x80 >> (x & 7)
+
+    return bih + bytes(xor_mask) + bytes(and_mask)
+
+
 def ico_bytes(frames: list[tuple[int, bytes]]) -> bytes:
-    """Build a .ico with PNG-compressed frames."""
+    """Build a .ico with DIB frames (<256) and PNG frame (256)."""
     hdr = struct.pack("<HHH", 0, 1, len(frames))
     entries = b""
     body = b""
-    for size, png in frames:
+    for size, payload in frames:
         w = size if size < 256 else 0
         entries += struct.pack(
             "<BBBBHHII",
@@ -204,20 +242,21 @@ def ico_bytes(frames: list[tuple[int, bytes]]) -> bytes:
             0,
             1,
             32,
-            len(png),
+            len(payload),
             6 + 16 * len(frames) + len(body),
         )
-        body += png
+        body += payload
     return hdr + entries + body
 
 
 def main() -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
     frames = []
-    for size in (16, 24, 32, 48, 256):
+    for size in (16, 24, 32, 48, 64, 256):
         raw = make_tray_image(size)
         png = png_bytes(size, raw)
-        frames.append((size, png))
+        payload = dib_bytes(size, raw) if size < 256 else png
+        frames.append((size, payload))
         if size in (16, 24, 32, 48):
             with open(os.path.join(OUT_DIR, f"icon_{size}.png"), "wb") as f:
                 f.write(png)
