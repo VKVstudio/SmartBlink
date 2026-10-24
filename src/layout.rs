@@ -170,6 +170,61 @@ impl LayoutLayerTable {
         }
         Some(out)
     }
+
+    /// Reverse lookup: find `(scan_code, shift)` that produces `ch` in this layout.
+    pub fn find_char(&self, ch: char) -> Option<(u8, bool)> {
+        for sc in 1u8..=255 {
+            if self.base[sc as usize] == ScanTranslation::Char(ch) {
+                return Some((sc, false));
+            }
+            if self.shift[sc as usize] == ScanTranslation::Char(ch) {
+                return Some((sc, true));
+            }
+        }
+        None
+    }
+
+    /// Look up the character produced by `(scan_code, shift)` in this layout.
+    #[inline]
+    pub fn char_at(&self, sc: u8, shift: bool) -> Option<char> {
+        let entry = if shift {
+            self.shift[sc as usize]
+        } else {
+            self.base[sc as usize]
+        };
+        match entry {
+            ScanTranslation::Char(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// Convert `text` from `self` (source layout) into `dst` (target layout) using scan-code reverse lookup.
+    /// Returns `(converted_text, mapped_count, unmapped_alpha_count)`.
+    pub fn convert_str_to(&self, text: &str, dst: &LayoutLayerTable) -> (String, usize, usize) {
+        let mut out = String::with_capacity(text.len());
+        let mut mapped_count = 0usize;
+        let mut unmapped_alpha_count = 0usize;
+
+        for ch in text.chars() {
+            if ch.is_whitespace() {
+                out.push(ch);
+                continue;
+            }
+            if let Some((sc, shift)) = self.find_char(ch) {
+                if let Some(target_ch) = dst.char_at(sc, shift) {
+                    out.push(target_ch);
+                    mapped_count += 1;
+                    continue;
+                }
+            }
+            if ch.is_alphabetic() {
+                unmapped_alpha_count += 1;
+            }
+            out.push(ch);
+        }
+
+        (out, mapped_count, unmapped_alpha_count)
+    }
 }
 
 fn translate_single(vk: u32, scan_code: u32, shift: bool, hkl: HKL) -> ScanTranslation {

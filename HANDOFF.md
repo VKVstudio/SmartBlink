@@ -196,3 +196,21 @@ Read `AGENTS.md`, `.system/checkpoint.md`. Execute M7 (`ARCHITECTURE.md` §3.3, 
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. Execute M8 (`ARCHITECTURE.md` §3.6, §3.7, §6).
+
+## Session #012 — 2026-10-24 — M8 implementation (selection conversion, byte-for-byte clipboard save/restore, stubborn-user whitelist)
+
+**Done**
+- Added `Win32_System_DataExchange` and `Win32_UI_Input_Ime` features to `Cargo.toml`.
+- Added `is_hwnd_ime_active` (`ImmGetContext` + `ImmGetOpenStatus`) in `src/immunity.rs` and scan-code reverse character lookup (`find_char`, `char_at`, `convert_str_to`) in `src/layout.rs`.
+- Created `src/clipboard.rs`:
+  - `SessionWhitelist`: fixed-capacity 256-slot FNV-1a hash + HKL ring (volatile-zeroed on clear/drop) that whitelists a word and its `>= 4`-char prefixes when the user presses `Space`/`Enter` after an alert without fixing.
+  - `ClipboardSnapshot` & `ClipboardRestoreGuard`: enumerates all `HGLOBAL` clipboard formats in order, copies exact byte payloads, restores all formats on drop (even on error paths), and volatile-zeroes saved buffers on drop.
+  - `SelectionHotkeyDetector` (`Ctrl+Alt+Z`), `convert_selection_text`, and `convert_selection_in_window`.
+- Wired `SessionWhitelist` and `SelectionHotkeyDetector` into `src/worker.rs`.
+
+**Verified**
+- `cargo build --release` → 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe`.
+- `cargo test --release` → `test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s`.
+
+**Next agent**
+Read `AGENTS.md`, `.system/checkpoint.md`. Execute M9 (`ARCHITECTURE.md` §3.8, §3.9, §6).

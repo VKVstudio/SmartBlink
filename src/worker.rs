@@ -4,6 +4,7 @@
 //! - Hard reset on mouse click, navigation keys, modifier chords, idle timeout (3.5 s),
 //!   focus change, or immune foreground process.
 
+use crate::clipboard::{self, SelectionHotkeyDetector, SessionWhitelist};
 use crate::config::{FixTrigger, LedMode, NotifyMode};
 use crate::fix::{self, FixGestureDetector};
 use crate::hooks;
@@ -32,6 +33,7 @@ const VK_MENU: u16 = 0x12; // Alt
 const VK_PAUSE: u16 = 0x13;
 const VK_CAPITAL: u16 = 0x14;
 const VK_ESCAPE: u16 = 0x1B;
+const VK_SPACE: u16 = 0x20;
 const VK_PRIOR: u16 = 0x21; // Page Up
 const VK_NEXT: u16 = 0x22; // Page Down
 const VK_END: u16 = 0x23;
@@ -310,6 +312,8 @@ pub fn start(
             let mut word_buf = WordBuffer::new();
             let mut ctrl_snapshot: Vec<KeyStrokeSlot> = Vec::new();
             let mut fix_detector = FixGestureDetector::new(fix_trigger);
+            let mut selection_detector = SelectionHotkeyDetector::new();
+            let mut whitelist = SessionWhitelist::new();
             let mut layout_cache = LayoutCache::new();
             let active_hkls = layout::active_layouts();
             for &hkl in &active_hkls {
@@ -318,6 +322,7 @@ pub fn start(
             let signal = SignalEngine::start(notify_mode, led_mode);
             let mut last_verdict: Option<DetectionVerdict> = None;
             let mut word_blinked = false;
+            let mut word_alerted = false;
             let mut last_key_instant: Option<Instant> = None;
 
             while !stop_flag.load(Ordering::Acquire) {
@@ -327,10 +332,12 @@ pub fn start(
                     }
                     zero_and_clear_vec(&mut ctrl_snapshot);
                     fix_detector.reset();
+                    selection_detector.reset();
                     if last_verdict.is_some() {
                         last_verdict = None;
                     }
                     word_blinked = false;
+                    word_alerted = false;
                     last_key_instant = None;
                     global_ring().clear_and_zero();
                     thread::sleep(Duration::from_millis(WORKER_TICK_MS));
@@ -344,10 +351,12 @@ pub fn start(
                     }
                     zero_and_clear_vec(&mut ctrl_snapshot);
                     fix_detector.reset();
+                    selection_detector.reset();
                     if last_verdict.is_some() {
                         last_verdict = None;
                     }
                     word_blinked = false;
+                    word_alerted = false;
                     last_key_instant = None;
                 }
 
@@ -363,6 +372,26 @@ pub fn start(
                         continue;
                     }
 
+                    // Stubborn user whitelist (ARCHITECTURE.md §3.7): if an alert was raised for the
+                    // current word and the user presses Space or Enter without fixing, whitelist it.
+                    if word_alerted
+                        && rec.kind == InputKind::KeyDown
+                        && (rec.vk == VK_SPACE || rec.vk == VK_RETURN)
+                    {
+                        let active_word = layout::active_word_slice(word_buf.as_slice());
+                        if active_word.len() >= profile::MIN_WORD_LEN {
+                            let cur_hkl = layout::window_layout(focus.current_hwnd());
+                            if let Some(rendered) =
+                                layout_cache.get_or_build(cur_hkl).render_keys(active_word)
+                            {
+                                whitelist.add_word(&rendered, cur_hkl);
+                            }
+                        }
+                        word_alerted = false;
+                        word_blinked = false;
+                        last_verdict = None;
+                    }
+
                     // Preserve a snapshot before bare Left Ctrl down when DoubleLeftCtrl is the trigger.
                     if fix_trigger == FixTrigger::DoubleLeftCtrl {
                         if rec.kind == InputKind::KeyDown && is_ctrl_vk(rec.vk) {
@@ -375,9 +404,29 @@ pub fn start(
                         }
                     }
 
+                    let selection_triggered = selection_detector.feed(rec);
                     let fix_triggered = fix_detector.feed(rec);
                     let prev_len = word_buf.len();
                     word_buf.feed(rec);
+
+                    if selection_triggered && !focus.refresh_password_immunity() {
+                        let hwnd = focus.current_hwnd();
+                        let cur_hkl = layout::window_layout(hwnd);
+                        let _ = clipboard::convert_selection_in_window(
+                            hwnd,
+                            cur_hkl,
+                            &active_hkls,
+                            &mut layout_cache,
+                        );
+                        word_buf.reset();
+                        zero_and_clear_vec(&mut ctrl_snapshot);
+                        last_verdict = None;
+                        word_blinked = false;
+                        word_alerted = false;
+                        last_key_instant = None;
+                        had_typing_key = false;
+                        continue;
+                    }
 
                     if fix_triggered && !focus.refresh_password_immunity() {
                         let slots = if !word_buf.is_empty() {
@@ -399,6 +448,7 @@ pub fn start(
                         zero_and_clear_vec(&mut ctrl_snapshot);
                         last_verdict = None;
                         word_blinked = false;
+                        word_alerted = false;
                         last_key_instant = None;
                         had_typing_key = false;
                         continue;
@@ -406,6 +456,7 @@ pub fn start(
 
                     if word_buf.is_empty() {
                         word_blinked = false;
+                        word_alerted = false;
                     } else if rec.kind == InputKind::KeyDown && word_buf.len() != prev_len {
                         had_typing_key = true;
                         last_key_instant = Some(Instant::now());
@@ -417,15 +468,26 @@ pub fn start(
                     if active_word.is_empty() {
                         last_verdict = None;
                         word_blinked = false;
+                        word_alerted = false;
                     } else if active_word.len() >= profile::MIN_WORD_LEN {
                         let cur_hkl = layout::window_layout(focus.current_hwnd());
-                        last_verdict = profile::evaluate_active_word(
-                            active_word,
-                            cur_hkl,
-                            &active_hkls,
-                            &mut layout_cache,
-                        );
+                        let is_whitelisted = layout_cache
+                            .get_or_build(cur_hkl)
+                            .render_keys(active_word)
+                            .map(|w| whitelist.is_whitelisted(&w, cur_hkl))
+                            .unwrap_or(false);
+                        if is_whitelisted {
+                            last_verdict = None;
+                        } else {
+                            last_verdict = profile::evaluate_active_word(
+                                active_word,
+                                cur_hkl,
+                                &active_hkls,
+                                &mut layout_cache,
+                            );
+                        }
                         if last_verdict.is_some() && !focus.refresh_password_immunity() {
+                            word_alerted = true;
                             signal.trigger_click();
                             if !word_blinked && signal.led_mode() == LedMode::ScrollLock {
                                 signal.trigger_blink();
@@ -435,6 +497,7 @@ pub fn start(
                             word_buf.reset();
                             last_verdict = None;
                             word_blinked = false;
+                            word_alerted = false;
                         }
                     } else {
                         last_verdict = None;

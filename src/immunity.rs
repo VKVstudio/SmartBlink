@@ -11,6 +11,7 @@ use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
+use windows::Win32::UI::Input::Ime::{ImmGetContext, ImmGetOpenStatus, ImmReleaseContext};
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
 /// Extract lowercase process image stem without `.exe` from a full path or filename.
@@ -65,6 +66,22 @@ pub fn query_hwnd_process_name(hwnd: HWND) -> Option<String> {
         }
         let path = String::from_utf16_lossy(&buf[..len as usize]);
         Some(normalize_process_name(&path))
+    }
+}
+
+/// Returns `true` if `hwnd` has an actively open IME context (`ARCHITECTURE.md` §3.7).
+pub fn is_hwnd_ime_active(hwnd: HWND) -> bool {
+    if hwnd.0.is_null() {
+        return false;
+    }
+    unsafe {
+        let himc = ImmGetContext(hwnd);
+        if himc.0.is_null() {
+            return false;
+        }
+        let is_open = ImmGetOpenStatus(himc).as_bool();
+        let _ = ImmReleaseContext(hwnd, himc);
+        is_open
     }
 }
 
@@ -163,7 +180,7 @@ impl FocusCache {
             Some(proc_name) => is_process_blacklisted(&proc_name, blacklist),
             None => false,
         };
-        let immune = proc_immune || self.is_focused_password();
+        let immune = proc_immune || is_hwnd_ime_active(hwnd) || self.is_focused_password();
         self.last_immune = immune;
         FocusStatus {
             hwnd_changed: true,

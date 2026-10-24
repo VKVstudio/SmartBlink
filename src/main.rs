@@ -4,6 +4,7 @@
 
 #![windows_subsystem = "windows"]
 
+mod clipboard;
 mod config;
 mod fix;
 mod hooks;
