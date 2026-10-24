@@ -976,7 +976,7 @@ pub fn show_settings_window() {
         if let Ok(hwnd) = CreateWindowExW(
             WINDOW_EX_STYLE(0),
             cls,
-            w!("SmartBlink — Bento Control Center"),
+            w!("SmartBlink — Settings"),
             style,
             pos_x,
             pos_y,
