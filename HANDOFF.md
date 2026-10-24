@@ -146,3 +146,23 @@ Read `AGENTS.md`, `.system/checkpoint.md`. Execute M4 (`ARCHITECTURE.md` §3.2, 
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. Execute M5 (`ARCHITECTURE.md` §3.4, §6).
+
+## Session #009 — 2026-10-24 — M5 implementation (alert channels: net-zero LED blink + WASAPI click sample + UIA password immunity)
+
+**Done**
+- Added `Win32_Media_Audio` and `Win32_UI_Accessibility` features to `Cargo.toml`.
+- Updated `src/hooks.rs` with `real_key_seq()` and `last_real_key_tick()` atomics so LED blink sequences abort immediately if a real user keystroke arrives mid-blink.
+- Updated `src/immunity.rs` with UI Automation `IUIAutomation::GetFocusedElement()?.CurrentIsPassword()` check (`is_focused_password` / `refresh_password_immunity`) so password fields disable detection and all alert channels.
+- Created `src/signal.rs`:
+  - `generate_click_pcm()`: 24 ms (`1152` frames at 48 kHz) 16-bit mono low-passed "wooden knock" sample (~-18 dBFS, zero endpoints).
+  - `WasapiClicker` (pre-warmed shared-mode render client with `AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY`) + `WaveOutClicker` fallback.
+  - `blink_led_net_zero()`: net-zero toggle restoration for `ScrollLock` (default) and `CapsLockGuarded` (opt-in, `>= 80 ms` typing gap guard), bracketed by `hooks::begin_suppression()` / `end_suppression()`.
+  - `SignalEngine`: dedicated `smartblink-audio` and `smartblink-led` background threads woken via `thread::unpark()`.
+- Wired `SignalEngine` into `src/worker.rs` and `src/main.rs`.
+
+**Verified**
+- `cargo build --release` → 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe`.
+- `cargo test --release` → `test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s`.
+
+**Next agent**
+Read `AGENTS.md`, `.system/checkpoint.md`. Execute M6 (`ARCHITECTURE.md` §3.1, §3.5, §6).

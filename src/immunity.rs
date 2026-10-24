@@ -4,9 +4,13 @@
 
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HWND};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+};
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
+use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
 /// Extract lowercase process image stem without `.exe` from a full path or filename.
@@ -64,10 +68,12 @@ pub fn query_hwnd_process_name(hwnd: HWND) -> Option<String> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct FocusCache {
     last_hwnd: isize,
     last_immune: bool,
+    uia: Option<IUIAutomation>,
+    uia_init_attempted: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,11 +87,54 @@ impl FocusCache {
         Self {
             last_hwnd: 0,
             last_immune: false,
+            uia: None,
+            uia_init_attempted: false,
         }
     }
 
     pub fn current_hwnd(&self) -> HWND {
         HWND(self.last_hwnd as *mut core::ffi::c_void)
+    }
+
+    pub fn invalidate(&mut self) {
+        self.last_hwnd = 0;
+        self.last_immune = false;
+    }
+
+    fn ensure_uia(&mut self) -> Option<&IUIAutomation> {
+        if !self.uia_init_attempted {
+            self.uia_init_attempted = true;
+            unsafe {
+                let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+                self.uia = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok();
+            }
+        }
+        self.uia.as_ref()
+    }
+
+    /// Query UI Automation `IsPassword` on the currently focused UI element (`AGENTS.md` #7).
+    pub fn is_focused_password(&mut self) -> bool {
+        let Some(uia) = self.ensure_uia() else {
+            return false;
+        };
+        unsafe {
+            let Ok(elem) = uia.GetFocusedElement() else {
+                return false;
+            };
+            elem.CurrentIsPassword().map(|b| b.as_bool()).unwrap_or(false)
+        }
+    }
+
+    /// Re-check whether the currently focused child element is a password field even if top-level `HWND` did not change.
+    pub fn refresh_password_immunity(&mut self) -> bool {
+        if self.last_immune {
+            return true;
+        }
+        if self.is_focused_password() {
+            self.last_immune = true;
+            return true;
+        }
+        false
     }
 
     /// Check the current foreground window and return whether focus changed and whether it is immune.
@@ -110,10 +159,11 @@ impl FocusCache {
                 is_immune: false,
             };
         }
-        let immune = match query_hwnd_process_name(hwnd) {
+        let proc_immune = match query_hwnd_process_name(hwnd) {
             Some(proc_name) => is_process_blacklisted(&proc_name, blacklist),
             None => false,
         };
+        let immune = proc_immune || self.is_focused_password();
         self.last_immune = immune;
         FocusStatus {
             hwnd_changed: true,

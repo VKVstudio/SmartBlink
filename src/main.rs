@@ -10,6 +10,7 @@ mod immunity;
 mod layout;
 mod profile;
 mod ring;
+mod signal;
 mod single_instance;
 mod tray;
 mod worker;
@@ -25,7 +26,7 @@ fn main() {
 
     let cfg = config::load_or_create();
 
-    let _worker = match worker::start(cfg.blacklist) {
+    let _worker = match worker::start(cfg.blacklist, cfg.notify_mode, cfg.led_mode) {
         Ok(guard) => guard,
         Err(_) => return,
     };

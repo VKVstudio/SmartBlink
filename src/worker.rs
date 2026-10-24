@@ -4,16 +4,18 @@
 //! - Hard reset on mouse click, navigation keys, modifier chords, idle timeout (3.5 s),
 //!   focus change, or immune foreground process.
 
+use crate::config::{LedMode, NotifyMode};
 use crate::hooks;
 use crate::immunity::FocusCache;
 use crate::layout::{self, LayoutCache};
 use crate::profile::{self, DetectionVerdict};
 use crate::ring::{global_ring, InputKind, InputRecord};
+use crate::signal::{self, SignalEngine};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const MAX_WORD_KEYS: usize = 64;
 pub const IDLE_RESET_MS: u32 = 3500;
@@ -278,7 +280,11 @@ impl Drop for WorkerGuard {
     }
 }
 
-pub fn start(blacklist: Vec<String>) -> windows::core::Result<WorkerGuard> {
+pub fn start(
+    blacklist: Vec<String>,
+    notify_mode: NotifyMode,
+    led_mode: LedMode,
+) -> windows::core::Result<WorkerGuard> {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_flag = Arc::clone(&stop);
 
@@ -292,7 +298,10 @@ pub fn start(blacklist: Vec<String>) -> windows::core::Result<WorkerGuard> {
             for &hkl in &active_hkls {
                 let _ = layout_cache.get_or_build(hkl);
             }
+            let signal = SignalEngine::start(notify_mode, led_mode);
             let mut last_verdict: Option<DetectionVerdict> = None;
+            let mut word_blinked = false;
+            let mut last_key_instant: Option<Instant> = None;
 
             while !stop_flag.load(Ordering::Acquire) {
                 if hooks::is_paused() {
@@ -302,6 +311,8 @@ pub fn start(blacklist: Vec<String>) -> windows::core::Result<WorkerGuard> {
                     if last_verdict.is_some() {
                         last_verdict = None;
                     }
+                    word_blinked = false;
+                    last_key_instant = None;
                     global_ring().clear_and_zero();
                     thread::sleep(Duration::from_millis(WORKER_TICK_MS));
                     continue;
@@ -315,30 +326,74 @@ pub fn start(blacklist: Vec<String>) -> windows::core::Result<WorkerGuard> {
                     if last_verdict.is_some() {
                         last_verdict = None;
                     }
+                    word_blinked = false;
+                    last_key_instant = None;
                 }
 
-                let mut had_key = false;
+                let mut had_typing_key = false;
                 while let Some(rec) = global_ring().pop() {
+                    if rec.kind == InputKind::MouseClick
+                        || (rec.kind == InputKind::KeyDown && rec.vk == VK_TAB)
+                    {
+                        // Focus within the same HWND may have moved into or out of a password box.
+                        focus.invalidate();
+                    }
                     if status.is_immune {
                         continue;
                     }
+                    let prev_len = word_buf.len();
                     word_buf.feed(rec);
-                    had_key = true;
+                    if word_buf.is_empty() {
+                        word_blinked = false;
+                    } else if rec.kind == InputKind::KeyDown && word_buf.len() != prev_len {
+                        had_typing_key = true;
+                        last_key_instant = Some(Instant::now());
+                    }
                 }
 
-                if had_key && !status.is_immune {
+                if had_typing_key && !status.is_immune {
                     let active_word = layout::active_word_slice(word_buf.as_slice());
-                    last_verdict = if active_word.len() >= profile::MIN_WORD_LEN {
+                    if active_word.is_empty() {
+                        last_verdict = None;
+                        word_blinked = false;
+                    } else if active_word.len() >= profile::MIN_WORD_LEN {
                         let cur_hkl = layout::window_layout(focus.current_hwnd());
-                        profile::evaluate_active_word(
+                        last_verdict = profile::evaluate_active_word(
                             active_word,
                             cur_hkl,
                             &active_hkls,
                             &mut layout_cache,
-                        )
+                        );
+                        if last_verdict.is_some() && !focus.refresh_password_immunity() {
+                            signal.trigger_click();
+                            if !word_blinked && signal.led_mode() == LedMode::ScrollLock {
+                                signal.trigger_blink();
+                                word_blinked = true;
+                            }
+                        } else if focus.refresh_password_immunity() {
+                            word_buf.reset();
+                            last_verdict = None;
+                            word_blinked = false;
+                        }
                     } else {
-                        None
-                    };
+                        last_verdict = None;
+                    }
+                }
+
+                // CapsLockGuarded mode: trigger pending blink only when in a typing gap >= 80 ms.
+                if !word_blinked
+                    && last_verdict.is_some()
+                    && signal.led_mode() == LedMode::CapsLockGuarded
+                    && !status.is_immune
+                {
+                    if let Some(t_last) = last_key_instant {
+                        if t_last.elapsed() >= Duration::from_millis(signal::CAPS_MIN_GAP_MS as u64)
+                            && !focus.refresh_password_immunity()
+                        {
+                            signal.trigger_blink();
+                            word_blinked = true;
+                        }
+                    }
                 }
 
                 thread::sleep(Duration::from_millis(WORKER_TICK_MS));

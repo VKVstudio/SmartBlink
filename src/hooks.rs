@@ -20,6 +20,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 static PAUSED: AtomicBool = AtomicBool::new(false);
 static SUPPRESS_DEPTH: AtomicU32 = AtomicU32::new(0);
+static REAL_KEY_SEQ: AtomicU32 = AtomicU32::new(0);
+static LAST_REAL_KEY_TICK: AtomicU32 = AtomicU32::new(0);
 
 #[inline]
 pub fn is_paused() -> bool {
@@ -52,6 +54,19 @@ pub fn end_suppression() {
     SUPPRESS_DEPTH.fetch_sub(1, Ordering::AcqRel);
 }
 
+/// Monotonic counter incremented on every real (non-injected) key-down event.
+#[inline]
+pub fn real_key_seq() -> u32 {
+    REAL_KEY_SEQ.load(Ordering::Acquire)
+}
+
+/// `kb.time` tick (ms) of the most recent real (non-injected) key-down event.
+#[allow(dead_code)]
+#[inline]
+pub fn last_real_key_tick() -> u32 {
+    LAST_REAL_KEY_TICK.load(Ordering::Acquire)
+}
+
 unsafe extern "system" fn low_level_keyboard_proc(
     ncode: i32,
     wparam: WPARAM,
@@ -72,6 +87,10 @@ unsafe extern "system" fn low_level_keyboard_proc(
                 _ => InputKind::Empty,
             };
             if kind != InputKind::Empty {
+                if kind == InputKind::KeyDown {
+                    REAL_KEY_SEQ.fetch_add(1, Ordering::Release);
+                    LAST_REAL_KEY_TICK.store(kb.time, Ordering::Release);
+                }
                 let _ = global_ring().push(InputRecord {
                     vk: kb.vkCode as u16,
                     scan_code: kb.scanCode as u16,
