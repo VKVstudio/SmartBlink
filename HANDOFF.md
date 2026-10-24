@@ -110,3 +110,21 @@ Read `AGENTS.md`, `.system/checkpoint.md`. Execute M2 (`ARCHITECTURE.md` §2, §
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. Execute M3 (`ARCHITECTURE.md` §3.1, §3.2, §6).
+
+## Session #007 — 2026-10-24 — M3 implementation (layout enumeration, ToUnicodeEx cache, word segmentation)
+
+**Done**
+- Implemented `src/layout.rs`:
+  - `active_layouts()` via `GetKeyboardLayoutList` and `window_layout(hwnd)` via `GetWindowThreadProcessId` + `GetKeyboardLayout`.
+  - `reconstruct_scan_code(scan_code, flags)` restoring `0xE000` when `LLKHF_EXTENDED` is set.
+  - `LayoutLayerTable` & `LayoutCache`: per-`HKL` lazy 256-entry `base` + `shift` layer tables built with `MapVirtualKeyExW(..., MAPVK_VSC_TO_VK_EX, hkl)` + `ToUnicodeEx(..., UNICODE_NO_CHANGED_STATE = 0x0004, hkl)`.
+  - Word segmentation (`active_word_slice`, `last_word_run_for_fix`) and URL/path/CLI-flag prefix immunity (`is_immune_token`).
+- Updated `src/worker.rs` to track `shift_down` on `KeyStrokeSlot` and pre-warm `LayoutCache`.
+
+**Verified**
+- `cargo build --release` → 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe`.
+- `cargo test --release` → `test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s`.
+- Committed as `d0e2bc8` + checkpoint/handoff update. Stopped as requested by owner.
+
+**Next agent**
+Read `AGENTS.md`, `.system/checkpoint.md`. Execute M4 (`ARCHITECTURE.md` §3.2, §3.3, §6).
