@@ -59,6 +59,7 @@
    - Implement fixes for all discovered vulnerabilities, layout/AltGr/dead-key/RTL bugs, UX gaps, and docs/SEO/GEO improvements.
    - Verify with `cargo test --release`, `cargo build --release`, and `ISCC.exe installer\SmartBlink.iss`.
 3. **Prepare for GitHub Upload:**
+   - Embed and showcase `SmartBlink_preview.png` (located at `C:\projects\SmartPunto\SmartBlink_preview.png`, showing the Dark Bento Settings window + Tray Flyout) in `README.md` and `README.ru.md` (and fix the minor text clip on `Selection: Ctrl+Alt+Z` in the top-left hero badge of `src/settings.rs`).
    - Ensure working tree, commits, `README.md`, `README.ru.md`, `CHANGELOG.md`, `LICENSE`, CI workflows, and `SHA256SUMS.txt` are 100% clean and ready for GitHub push/release (do NOT push without explicit owner command).
 
 ## Blockers
