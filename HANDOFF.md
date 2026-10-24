@@ -91,3 +91,22 @@ Read `AGENTS.md`, `.system/checkpoint.md`, then execute `.system/next_task.md` i
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. Execute M2 (`ARCHITECTURE.md` §2, §3.7, §6).
+
+## Session #006 — 2026-10-23/24 — M2 implementation (hooks, ring, immunity, worker, tray pause)
+
+**Done**
+- Implemented M2 modules:
+  - `src/ring.rs`: lock-free 256-slot SPSC ring buffer (`InputRecord`, 16 B) with volatile slot zeroing on `pop()` and `clear_and_zero()`.
+  - `src/immunity.rs`: foreground `HWND`-cached process immunity check via `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` + `QueryFullProcessImageNameW` against `cfg.blacklist`.
+  - `src/hooks.rs`: dedicated `smartblink-hooks` thread installing `WH_KEYBOARD_LL` and `WH_MOUSE_LL`, filtering injected events (`LLKHF_INJECTED | LLKHF_LOWER_IL_INJECTED`, `LLMHF_INJECTED | LLMHF_LOWER_IL_INJECTED`), pause state, and suppression depth; clean unhook via `PostThreadMessageW(WM_QUIT)`.
+  - `src/worker.rs`: 30 Hz `smartblink-worker` thread + 64-slot `WordBuffer` with volatile zeroing on reset/drop and hard resets on mouse click, navigation keys, modifier chords, idle timeout (3.5 s), focus change, and immune windows.
+  - `src/tray.rs` & `src/main.rs`: added `Pause` / `Resume` toggle item in tray menu + `NIM_MODIFY` tooltip update (`SmartBlink (Paused)`).
+
+**Verified**
+- `cargo build --release` → 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe`.
+- `cargo test --release` → `test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s`.
+- Automated smoke test → `first alive: True`, `second exited: True`.
+- Pending: owner manual check of `Pause` / `Resume` menu item and typing feel on desktop.
+
+**Next agent**
+Read `AGENTS.md`, `.system/checkpoint.md`. Execute M3 (`ARCHITECTURE.md` §3.1, §3.2, §6).

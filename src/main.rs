@@ -1,11 +1,16 @@
 //! SmartBlink — wrong-layout typing detection and one-gesture fix.
-//! M1: single instance, tray icon, config read/write. No hooks yet (M2+).
+//! M2: single instance, config, low-level keyboard/mouse hooks, lock-free SPSC ring,
+//! foreground process immunity, worker word buffer, tray icon + Pause/Resume + Exit.
 
 #![windows_subsystem = "windows"]
 
 mod config;
+mod hooks;
+mod immunity;
+mod ring;
 mod single_instance;
 mod tray;
+mod worker;
 
 fn main() {
     let _instance = match single_instance::acquire() {
@@ -16,7 +21,17 @@ fn main() {
         }
     };
 
-    let _cfg = config::load_or_create();
+    let cfg = config::load_or_create();
+
+    let _worker = match worker::start(cfg.blacklist) {
+        Ok(guard) => guard,
+        Err(_) => return,
+    };
+
+    let _hooks = match hooks::start() {
+        Ok(guard) => guard,
+        Err(_) => return,
+    };
 
     let _ = tray::run();
 }

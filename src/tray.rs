@@ -1,25 +1,30 @@
-//! Tray icon + message loop (M1 scope: icon, tooltip, Exit menu).
+//! Tray icon + message loop (M2 scope: icon, tooltip, Pause/Resume toggle, Exit menu).
 //! Uses Shell_NotifyIconW with a hidden top-level window so TaskbarCreated broadcasts arrive.
 
+use crate::hooks;
 use std::sync::atomic::{AtomicU32, Ordering};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::{
-    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
+    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
+    NOTIFYICONDATAW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
     DispatchMessageW, FindWindowW, GetCursorPos, GetMessageW, GetSystemMetrics, HICON,
-    IDI_APPLICATION, IMAGE_ICON, LoadIconW, LoadImageW, LR_DEFAULTCOLOR, MF_STRING, MSG,
-    PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SetForegroundWindow,
-    ShowWindow, SM_CXSMICON, SM_CYSMICON, SW_HIDE, TrackPopupMenu, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TranslateMessage, WNDCLASSW, WM_APP, WM_DESTROY, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP,
+    IDI_APPLICATION, IMAGE_ICON, LoadIconW, LoadImageW, LR_DEFAULTCOLOR, MF_SEPARATOR, MF_STRING,
+    MSG, PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW,
+    SetForegroundWindow, ShowWindow, SM_CXSMICON, SM_CYSMICON, SW_HIDE, TrackPopupMenu,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, TranslateMessage, WNDCLASSW, WM_APP, WM_DESTROY, WM_LBUTTONUP,
+    WM_NULL, WM_RBUTTONUP,
 };
 
 pub const WM_TRAY: u32 = WM_APP + 1;
 /// Menu command id for the Exit item (WM_APP range is free for app use).
 pub const WM_TRAY_EXIT: usize = (WM_APP + 2) as usize;
+/// Menu command id for the Pause/Resume toggle item.
+pub const WM_TRAY_PAUSE_TOGGLE: usize = (WM_APP + 3) as usize;
 const ICON_UID: u32 = 1;
 const IDI_MAIN: usize = 101; // MAKEINTRESOURCE(101): low word set, high word zero.
 
@@ -93,6 +98,14 @@ unsafe fn load_tray_icon(hmod: HMODULE) -> HICON {
     LoadIconW(None, IDI_APPLICATION).unwrap_or(HICON(std::ptr::null_mut()))
 }
 
+fn current_tooltip_text(paused: bool) -> &'static str {
+    if paused {
+        "SmartBlink (Paused)"
+    } else {
+        "SmartBlink"
+    }
+}
+
 unsafe fn add_tray_icon(hwnd: HWND, hmod: HMODULE) -> windows::core::Result<()> {
     let hicon = load_tray_icon(hmod);
 
@@ -105,7 +118,8 @@ unsafe fn add_tray_icon(hwnd: HWND, hmod: HMODULE) -> windows::core::Result<()> 
         hIcon: hicon,
         ..Default::default()
     };
-    copy_wtext(&utf16_units("SmartBlink"), &mut nid.szTip);
+    let tip = current_tooltip_text(hooks::is_paused());
+    copy_wtext(&utf16_units(tip), &mut nid.szTip);
     if !Shell_NotifyIconW(NIM_ADD, &nid).as_bool() {
         // If Shell_TrayWnd exists on this desktop, NIM_ADD genuinely failed.
         // If Shell_TrayWnd is not present yet (e.g. early logon before Explorer creates
@@ -118,6 +132,19 @@ unsafe fn add_tray_icon(hwnd: HWND, hmod: HMODULE) -> windows::core::Result<()> 
         }
     }
     Ok(())
+}
+
+unsafe fn update_tray_tooltip(hwnd: HWND, paused: bool) {
+    let mut nid = NOTIFYICONDATAW {
+        cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: hwnd,
+        uID: ICON_UID,
+        uFlags: NIF_TIP,
+        ..Default::default()
+    };
+    let tip = current_tooltip_text(paused);
+    copy_wtext(&utf16_units(tip), &mut nid.szTip);
+    let _ = Shell_NotifyIconW(NIM_MODIFY, &nid);
 }
 
 unsafe fn remove_tray_icon(hwnd: HWND) {
@@ -180,6 +207,16 @@ unsafe fn show_menu(hwnd: HWND) {
         Ok(h) => h,
         Err(_) => return,
     };
+    let pause_label = if hooks::is_paused() {
+        w!("Resume")
+    } else {
+        w!("Pause")
+    };
+    if AppendMenuW(hmenu, MF_STRING, WM_TRAY_PAUSE_TOGGLE, pause_label).is_err() {
+        let _ = DestroyMenu(hmenu);
+        return;
+    }
+    let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, None);
     if AppendMenuW(hmenu, MF_STRING, WM_TRAY_EXIT, w!("Exit")).is_err() {
         let _ = DestroyMenu(hmenu);
         return;
@@ -199,7 +236,10 @@ unsafe fn show_menu(hwnd: HWND) {
     );
     let _ = PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0));
     let _ = DestroyMenu(hmenu);
-    if cmd.0 == WM_TRAY_EXIT as i32 {
+    if cmd.0 == WM_TRAY_PAUSE_TOGGLE as i32 {
+        let paused = hooks::toggle_paused();
+        update_tray_tooltip(hwnd, paused);
+    } else if cmd.0 == WM_TRAY_EXIT as i32 {
         let _ = DestroyWindow(hwnd);
     }
 }
@@ -228,4 +268,3 @@ mod tests {
         }
     }
 }
-
