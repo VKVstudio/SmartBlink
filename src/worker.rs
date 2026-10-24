@@ -7,6 +7,7 @@
 use crate::hooks;
 use crate::immunity::FocusCache;
 use crate::layout::{self, LayoutCache};
+use crate::profile::{self, DetectionVerdict};
 use crate::ring::{global_ring, InputKind, InputRecord};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -287,14 +288,19 @@ pub fn start(blacklist: Vec<String>) -> windows::core::Result<WorkerGuard> {
             let mut focus = FocusCache::new();
             let mut word_buf = WordBuffer::new();
             let mut layout_cache = LayoutCache::new();
-            for hkl in layout::active_layouts() {
+            let active_hkls = layout::active_layouts();
+            for &hkl in &active_hkls {
                 let _ = layout_cache.get_or_build(hkl);
             }
+            let mut last_verdict: Option<DetectionVerdict> = None;
 
             while !stop_flag.load(Ordering::Acquire) {
                 if hooks::is_paused() {
                     if !word_buf.is_empty() {
                         word_buf.reset();
+                    }
+                    if last_verdict.is_some() {
+                        last_verdict = None;
                     }
                     global_ring().clear_and_zero();
                     thread::sleep(Duration::from_millis(WORKER_TICK_MS));
@@ -306,13 +312,33 @@ pub fn start(blacklist: Vec<String>) -> windows::core::Result<WorkerGuard> {
                     if !word_buf.is_empty() {
                         word_buf.reset();
                     }
+                    if last_verdict.is_some() {
+                        last_verdict = None;
+                    }
                 }
 
+                let mut had_key = false;
                 while let Some(rec) = global_ring().pop() {
                     if status.is_immune {
                         continue;
                     }
                     word_buf.feed(rec);
+                    had_key = true;
+                }
+
+                if had_key && !status.is_immune {
+                    let active_word = layout::active_word_slice(word_buf.as_slice());
+                    last_verdict = if active_word.len() >= profile::MIN_WORD_LEN {
+                        let cur_hkl = layout::window_layout(focus.current_hwnd());
+                        profile::evaluate_active_word(
+                            active_word,
+                            cur_hkl,
+                            &active_hkls,
+                            &mut layout_cache,
+                        )
+                    } else {
+                        None
+                    };
                 }
 
                 thread::sleep(Duration::from_millis(WORKER_TICK_MS));

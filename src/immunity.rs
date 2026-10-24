@@ -84,6 +84,10 @@ impl FocusCache {
         }
     }
 
+    pub fn current_hwnd(&self) -> HWND {
+        HWND(self.last_hwnd as *mut core::ffi::c_void)
+    }
+
     /// Check the current foreground window and return whether focus changed and whether it is immune.
     pub fn update(&mut self, blacklist: &[String]) -> FocusStatus {
         let hwnd = unsafe { GetForegroundWindow() };

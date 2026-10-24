@@ -220,6 +220,11 @@ impl LayoutCache {
             .entry(key)
             .or_insert_with(|| LayoutLayerTable::build(hkl))
     }
+
+    pub fn get(&self, hkl: HKL) -> Option<&LayoutLayerTable> {
+        let key = hkl.0 as isize;
+        self.tables.get(&key)
+    }
 }
 
 /// Extract the active word being typed (after the last `VK_SPACE`), or empty if the last key was `VK_SPACE`.

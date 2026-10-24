@@ -128,3 +128,21 @@ Read `AGENTS.md`, `.system/checkpoint.md`. Execute M3 (`ARCHITECTURE.md` §3.1, 
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. Execute M4 (`ARCHITECTURE.md` §3.2, §3.3, §6).
+
+## Session #008 — 2026-10-24 — M4 implementation (profile format, profilegen, EN/RU profiles, scoring engine)
+
+**Done**
+- Created `tools/profilegen` (`Cargo.toml` + `src/main.rs`) and `assets/profiles/LICENSES.md`.
+- Generated `assets/profiles/en.bin` (5755 bytes: 26 letters, 299 bigrams, 956 trigrams) and `assets/profiles/ru.bin` (5891 bytes: 33 letters, 358 bigrams, 945 trigrams) in `SMBP` v1 format.
+- Implemented `src/profile.rs`:
+  - `LanguageProfile::from_bytes` + embedded `en.bin` and `ru.bin` via `include_bytes!`.
+  - `score_word`: sorted `u16` bigram and `u32` trigram log-odds lookup + vowel/consonant/OOV phonotactic structure scoring.
+  - `evaluate_tables` & `evaluate_active_word`: 3-gate decision rule (`current_score <= CURRENT_MAX_PLAUSIBLE_SCORE`, `best_score >= ABSOLUTE_THRESHOLD`, `margin >= MARGIN_THRESHOLD`).
+- Wired `profile::evaluate_active_word` into `src/worker.rs`.
+
+**Verified**
+- `cargo build --release` → 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe`.
+- `cargo test --release` → `test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s` (including `Ghbdtn`/`Привет`, `Cjj,otybt`/`Сообщение`, `Руддщ`/`Hello`, bilingual homograph `"here"`/`"руку"` false-positive immunity, and `< 100 us/word` benchmark).
+
+**Next agent**
+Read `AGENTS.md`, `.system/checkpoint.md`. Execute M5 (`ARCHITECTURE.md` §3.4, §6).

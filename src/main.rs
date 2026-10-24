@@ -8,6 +8,7 @@ mod config;
 mod hooks;
 mod immunity;
 mod layout;
+mod profile;
 mod ring;
 mod single_instance;
 mod tray;
