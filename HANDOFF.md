@@ -253,3 +253,18 @@ Read `AGENTS.md`, `.system/checkpoint.md`. Execute M11 (`ARCHITECTURE.md` §4, �
 
 **Next agent**
 Read `AGENTS.md`, `.system/checkpoint.md`. Execute M12 (`ARCHITECTURE.md` §6).
+
+## Session #016 — 2026-10-24 — M12 implementation (v1.0.0 release build, installer, SHA256SUMS.txt, CHANGELOG)
+
+**Done**
+- Bumped version to `1.0.0` in `Cargo.toml` and `assets/version.rc` (`FILEVERSION 1,0,0,0` / `PRODUCTVERSION 1,0,0,0`).
+- Created `CHANGELOG.md` for `v1.0.0`.
+- Rebuilt `target\x86_64-pc-windows-gnullvm\release\smartblink.exe` and `target\installer\SmartBlink-Setup-1.0.0.exe`, and generated `target\installer\SHA256SUMS.txt`.
+
+**Verified**
+- `cargo test --release` → `test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out`.
+- `cargo build --release` → 0 warnings, `ProductVersion == 1.0.0.0`.
+- `ISCC.exe installer\SmartBlink.iss` → `target\installer\SmartBlink-Setup-1.0.0.exe`.
+
+**Next agent**
+All 12 milestones (M1–M12) are complete. Await owner desktop verification and explicit approval before any `git push` or GitHub Release.

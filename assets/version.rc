@@ -5,8 +5,8 @@
 1 24 "app.manifest"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,1,0,0
- PRODUCTVERSION 0,1,0,0
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS 0x40004L
@@ -19,12 +19,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "VKV Studio"
             VALUE "FileDescription", "SmartBlink - wrong-layout typing alert and one-gesture fix"
-            VALUE "FileVersion", "0.1.0.0"
+            VALUE "FileVersion", "1.0.0.0"
             VALUE "InternalName", "smartblink"
             VALUE "LegalCopyright", "MIT License - Copyright (c) 2026 VKV Studio"
             VALUE "OriginalFilename", "smartblink.exe"
             VALUE "ProductName", "SmartBlink"
-            VALUE "ProductVersion", "0.1.0.0"
+            VALUE "ProductVersion", "1.0.0.0"
         END
     END
     BLOCK "VarFileInfo"
