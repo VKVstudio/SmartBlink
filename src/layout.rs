@@ -21,6 +21,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 pub const UNICODE_NO_CHANGED_STATE: u32 = 0x0004;
 
 const VK_SHIFT_IDX: usize = 0x10;
+const VK_CONTROL_IDX: usize = 0x11;
+const VK_MENU_IDX: usize = 0x12;
+const VK_LCONTROL_IDX: usize = 0xA2;
+const VK_RMENU_IDX: usize = 0xA5;
 const VK_SPACE: u16 = 0x20;
 
 /// Extract the 16-bit LANGID (low word) from an `HKL`.
@@ -102,11 +106,143 @@ pub fn window_layout(hwnd: HWND) -> HKL {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanTranslation {
     None,
-    DeadKey,
+    DeadKey(char),
     Char(char),
+    Chars(char, char),
 }
 
-///Cached 256-scan-code layer table for a single `HKL`.
+/// Compose a dead-key accent character with a following base letter (`ES`, `PT`, `FR`, `DE`, `CS`, `EL`).
+pub fn combine_dead_key(dead: char, base: char) -> Option<char> {
+    match dead {
+        '´' | '\u{0301}' | '\'' | '΄' | '΅' | ';' => match base {
+            'a' => Some('á'),
+            'A' => Some('Á'),
+            'e' => Some('é'),
+            'E' => Some('É'),
+            'i' => Some('í'),
+            'I' => Some('Í'),
+            'o' => Some('ó'),
+            'O' => Some('Ó'),
+            'u' => Some('ú'),
+            'U' => Some('Ú'),
+            'y' => Some('ý'),
+            'Y' => Some('Ý'),
+            'c' => Some('ć'),
+            'C' => Some('Ć'),
+            'n' => Some('ń'),
+            'N' => Some('Ń'),
+            'r' => Some('ŕ'),
+            'R' => Some('Ŕ'),
+            's' => Some('ś'),
+            'S' => Some('Ś'),
+            'z' => Some('ź'),
+            'Z' => Some('Ź'),
+            'α' => Some('ά'),
+            'Α' => Some('Ά'),
+            'ε' => Some('έ'),
+            'Ε' => Some('Έ'),
+            'η' => Some('ή'),
+            'Η' => Some('Ή'),
+            'ι' => Some('ί'),
+            'Ι' => Some('Ί'),
+            'ο' => Some('ό'),
+            'Ο' => Some('Ό'),
+            'υ' => Some('ύ'),
+            'Υ' => Some('Ύ'),
+            'ω' => Some('ώ'),
+            'Ω' => Some('Ώ'),
+            _ => None,
+        },
+        '`' | '\u{0300}' => match base {
+            'a' => Some('à'),
+            'A' => Some('À'),
+            'e' => Some('è'),
+            'E' => Some('È'),
+            'i' => Some('ì'),
+            'I' => Some('Ì'),
+            'o' => Some('ò'),
+            'O' => Some('Ò'),
+            'u' => Some('ù'),
+            'U' => Some('Ù'),
+            _ => None,
+        },
+        '^' | '\u{0302}' => match base {
+            'a' => Some('â'),
+            'A' => Some('Â'),
+            'e' => Some('ê'),
+            'E' => Some('Ê'),
+            'i' => Some('î'),
+            'I' => Some('Î'),
+            'o' => Some('ô'),
+            'O' => Some('Ô'),
+            'u' => Some('û'),
+            'U' => Some('Û'),
+            _ => None,
+        },
+        '~' | '\u{0303}' => match base {
+            'a' => Some('ã'),
+            'A' => Some('Ã'),
+            'n' => Some('ñ'),
+            'N' => Some('Ñ'),
+            'o' => Some('õ'),
+            'O' => Some('Õ'),
+            _ => None,
+        },
+        '¨' | '\u{0308}' | '"' => match base {
+            'a' => Some('ä'),
+            'A' => Some('Ä'),
+            'e' => Some('ë'),
+            'E' => Some('Ë'),
+            'i' => Some('ï'),
+            'I' => Some('Ï'),
+            'o' => Some('ö'),
+            'O' => Some('Ö'),
+            'u' => Some('ü'),
+            'U' => Some('Ü'),
+            'y' => Some('ÿ'),
+            'Y' => Some('Ÿ'),
+            'ι' => Some('ϊ'),
+            'υ' => Some('ϋ'),
+            _ => None,
+        },
+        'ˇ' | '\u{030C}' => match base {
+            'c' => Some('č'),
+            'C' => Some('Č'),
+            'd' => Some('ď'),
+            'D' => Some('Ď'),
+            'e' => Some('ě'),
+            'E' => Some('Ě'),
+            'n' => Some('ň'),
+            'N' => Some('Ň'),
+            'r' => Some('ř'),
+            'R' => Some('Ř'),
+            's' => Some('š'),
+            'S' => Some('Š'),
+            't' => Some('ť'),
+            'T' => Some('Ť'),
+            'z' => Some('ž'),
+            'Z' => Some('Ž'),
+            _ => None,
+        },
+        '˚' | '°' | '\u{030A}' => match base {
+            'a' => Some('å'),
+            'A' => Some('Å'),
+            'u' => Some('ů'),
+            'U' => Some('Ů'),
+            _ => None,
+        },
+        '¸' | '\u{0327}' => match base {
+            'c' => Some('ç'),
+            'C' => Some('Ç'),
+            's' => Some('ş'),
+            'S' => Some('Ş'),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Cached 256-scan-code layer table (`base`, `shift`, `altgr`, `shift_altgr`) for a single `HKL`.
 #[derive(Clone)]
 pub struct LayoutLayerTable {
     pub hkl: HKL,
@@ -114,13 +250,17 @@ pub struct LayoutLayerTable {
     pub primary_lang: u16,
     base: [ScanTranslation; 256],
     shift: [ScanTranslation; 256],
+    altgr: [ScanTranslation; 256],
+    shift_altgr: [ScanTranslation; 256],
 }
 
 impl LayoutLayerTable {
-    /// Build the 256-entry base + shift layer table for `hkl` via `MapVirtualKeyExW` + `ToUnicodeEx`.
+    /// Build the 256-entry base + shift + AltGr layer table for `hkl` via `MapVirtualKeyExW` + `ToUnicodeEx`.
     pub fn build(hkl: HKL) -> Self {
         let mut base = [ScanTranslation::None; 256];
         let mut shift = [ScanTranslation::None; 256];
+        let mut altgr = [ScanTranslation::None; 256];
+        let mut shift_altgr = [ScanTranslation::None; 256];
 
         for sc in 0u32..256 {
             // Skip extended scan codes in the 0..256 non-extended table; non-extended typing keys live in 0x01..=0x58.
@@ -128,8 +268,10 @@ impl LayoutLayerTable {
             if vk == 0 {
                 continue;
             }
-            base[sc as usize] = translate_single(vk, sc, false, hkl);
-            shift[sc as usize] = translate_single(vk, sc, true, hkl);
+            base[sc as usize] = translate_single(vk, sc, false, false, hkl);
+            shift[sc as usize] = translate_single(vk, sc, true, false, hkl);
+            altgr[sc as usize] = translate_single(vk, sc, false, true, hkl);
+            shift_altgr[sc as usize] = translate_single(vk, sc, true, true, hkl);
         }
 
         Self {
@@ -138,6 +280,8 @@ impl LayoutLayerTable {
             primary_lang: hkl_primary_lang(hkl),
             base,
             shift,
+            altgr,
+            shift_altgr,
         }
     }
 
@@ -156,7 +300,38 @@ impl LayoutLayerTable {
             primary_lang: hkl_primary_lang(hkl),
             base,
             shift,
+            altgr: [ScanTranslation::None; 256],
+            shift_altgr: [ScanTranslation::None; 256],
         }
+    }
+
+    #[cfg(test)]
+    pub fn with_altgr_pairs(mut self, pairs: &[(u8, char, char)]) -> Self {
+        for &(sc, b, s) in pairs {
+            self.altgr[sc as usize] = ScanTranslation::Char(b);
+            self.shift_altgr[sc as usize] = ScanTranslation::Char(s);
+        }
+        self
+    }
+
+    #[cfg(test)]
+    pub fn with_dead_key(mut self, sc: u8, shift: bool, dead: char) -> Self {
+        if shift {
+            self.shift[sc as usize] = ScanTranslation::DeadKey(dead);
+        } else {
+            self.base[sc as usize] = ScanTranslation::DeadKey(dead);
+        }
+        self
+    }
+
+    #[cfg(test)]
+    pub fn with_ligature(mut self, sc: u8, shift: bool, c1: char, c2: char) -> Self {
+        if shift {
+            self.shift[sc as usize] = ScanTranslation::Chars(c1, c2);
+        } else {
+            self.base[sc as usize] = ScanTranslation::Chars(c1, c2);
+        }
+        self
     }
 
     /// O(1) lookup for a keystroke slot. Extended keys (`LLKHF_EXTENDED`) bypass the non-extended table.
@@ -166,32 +341,83 @@ impl LayoutLayerTable {
         if full_sc >= 256 {
             return ScanTranslation::None;
         }
-        if slot.shift {
-            self.shift[full_sc as usize]
-        } else {
-            self.base[full_sc as usize]
+        let idx = full_sc as usize;
+        match (slot.shift, slot.altgr) {
+            (false, false) => self.base[idx],
+            (true, false) => self.shift[idx],
+            (false, true) => {
+                let entry = self.altgr[idx];
+                if entry != ScanTranslation::None {
+                    entry
+                } else {
+                    self.base[idx]
+                }
+            }
+            (true, true) => {
+                let entry = self.shift_altgr[idx];
+                if entry != ScanTranslation::None {
+                    entry
+                } else {
+                    self.shift[idx]
+                }
+            }
         }
     }
 
     /// Render a slice of keystroke slots into a string using this layout's cached layers.
-    /// Returns `None` if any keystroke in the slice triggers a dead key (scoring suppressed until resolved).
+    /// Resolves 2-key dead-key sequences (`´` + `e` -> `é`) and 2-char ligatures (Arabic `لا`).
+    /// Returns `None` if an unresolved dead key is still pending at the end of `keys`.
     pub fn render_keys(&self, keys: &[KeyStrokeSlot]) -> Option<String> {
         let mut out = String::with_capacity(keys.len());
+        let mut pending_dead: Option<char> = None;
+
         for slot in keys {
             if slot.vk == VK_SPACE {
-                out.push(' ');
+                if let Some(d) = pending_dead.take() {
+                    out.push(d);
+                } else {
+                    out.push(' ');
+                }
                 continue;
             }
             match self.lookup(slot) {
-                ScanTranslation::Char(c) => out.push(c),
-                ScanTranslation::DeadKey => return None,
+                ScanTranslation::Char(c) => {
+                    if let Some(d) = pending_dead.take() {
+                        if let Some(combined) = combine_dead_key(d, c) {
+                            out.push(combined);
+                        } else {
+                            out.push(d);
+                            out.push(c);
+                        }
+                    } else {
+                        out.push(c);
+                    }
+                }
+                ScanTranslation::Chars(c1, c2) => {
+                    if let Some(d) = pending_dead.take() {
+                        out.push(d);
+                    }
+                    out.push(c1);
+                    out.push(c2);
+                }
+                ScanTranslation::DeadKey(d) => {
+                    if let Some(prev_d) = pending_dead.take() {
+                        out.push(prev_d);
+                    } else {
+                        pending_dead = Some(d);
+                    }
+                }
                 ScanTranslation::None => {}
             }
+        }
+
+        if pending_dead.is_some() {
+            return None;
         }
         Some(out)
     }
 
-    /// Reverse lookup: find `(scan_code, shift)` that produces `ch` in this layout.
+    /// Reverse lookup: find `(scan_code, shift)` that produces `ch` in this layout (`base` or `shift`).
     pub fn find_char(&self, ch: char) -> Option<(u8, bool)> {
         for sc in 1u8..=255 {
             if self.base[sc as usize] == ScanTranslation::Char(ch) {
@@ -199,6 +425,46 @@ impl LayoutLayerTable {
             }
             if self.shift[sc as usize] == ScanTranslation::Char(ch) {
                 return Some((sc, true));
+            }
+        }
+        None
+    }
+
+    /// Extended reverse lookup including `altgr` and `shift_altgr` layers.
+    pub fn find_char_ext(&self, ch: char) -> Option<(u8, bool, bool)> {
+        for sc in 1u8..=255 {
+            if self.base[sc as usize] == ScanTranslation::Char(ch) {
+                return Some((sc, false, false));
+            }
+            if self.shift[sc as usize] == ScanTranslation::Char(ch) {
+                return Some((sc, true, false));
+            }
+        }
+        for sc in 1u8..=255 {
+            if self.altgr[sc as usize] == ScanTranslation::Char(ch) {
+                return Some((sc, false, true));
+            }
+            if self.shift_altgr[sc as usize] == ScanTranslation::Char(ch) {
+                return Some((sc, true, true));
+            }
+        }
+        None
+    }
+
+    fn find_ligature(&self, c1: char, c2: char) -> Option<(u8, bool, bool)> {
+        let target = ScanTranslation::Chars(c1, c2);
+        for sc in 1u8..=255 {
+            if self.base[sc as usize] == target {
+                return Some((sc, false, false));
+            }
+            if self.shift[sc as usize] == target {
+                return Some((sc, true, false));
+            }
+            if self.altgr[sc as usize] == target {
+                return Some((sc, false, true));
+            }
+            if self.shift_altgr[sc as usize] == target {
+                return Some((sc, true, true));
             }
         }
         None
@@ -218,39 +484,136 @@ impl LayoutLayerTable {
         }
     }
 
+    #[inline]
+    fn translation_at(&self, sc: u8, shift: bool, altgr: bool) -> ScanTranslation {
+        let idx = sc as usize;
+        match (shift, altgr) {
+            (false, false) => self.base[idx],
+            (true, false) => self.shift[idx],
+            (false, true) => {
+                if self.altgr[idx] != ScanTranslation::None {
+                    self.altgr[idx]
+                } else {
+                    self.base[idx]
+                }
+            }
+            (true, true) => {
+                if self.shift_altgr[idx] != ScanTranslation::None {
+                    self.shift_altgr[idx]
+                } else {
+                    self.shift[idx]
+                }
+            }
+        }
+    }
+
     /// Convert `text` from `self` (source layout) into `dst` (target layout) using scan-code reverse lookup.
+    /// Supports `AltGr`, 2-char ligatures (`لا`), and unicameral Georgian (`KA`) -> bicameral case normalization.
     /// Returns `(converted_text, mapped_count, unmapped_alpha_count)`.
     pub fn convert_str_to(&self, text: &str, dst: &LayoutLayerTable) -> (String, usize, usize) {
         let mut out = String::with_capacity(text.len());
         let mut mapped_count = 0usize;
         let mut unmapped_alpha_count = 0usize;
+        let chars: Vec<char> = text.chars().collect();
+        let mut idx = 0usize;
+        let mut at_word_start = true;
+        // Georgian (0x37) is unicameral and uses Shift for 7 ordinary letters (თ, ჭ, ღ, შ, ჟ, ძ, ჩ).
+        let src_is_georgian = self.primary_lang == 0x37;
+        let dst_is_bicameral = !matches!(dst.primary_lang, 0x37 | 0x0D | 0x01);
 
-        for ch in text.chars() {
+        while idx < chars.len() {
+            let ch = chars[idx];
             if ch.is_whitespace() {
                 out.push(ch);
+                at_word_start = true;
+                idx += 1;
                 continue;
             }
-            if let Some((sc, shift)) = self.find_char(ch) {
-                if let Some(target_ch) = dst.char_at(sc, shift) {
-                    out.push(target_ch);
-                    mapped_count += 1;
-                    continue;
+
+            // 1. Check 2-char ligature in source layout (e.g. Arabic `لا` on scan code 0x30):
+            if idx + 1 < chars.len() {
+                if let Some((sc, shift, altgr)) = self.find_ligature(ch, chars[idx + 1]) {
+                    let effective_shift = if src_is_georgian && dst_is_bicameral && !at_word_start {
+                        false
+                    } else {
+                        shift
+                    };
+                    match dst.translation_at(sc, effective_shift, altgr) {
+                        ScanTranslation::Char(tc) => {
+                            out.push(tc);
+                            mapped_count += 2;
+                            at_word_start = false;
+                            idx += 2;
+                            continue;
+                        }
+                        ScanTranslation::Chars(tc1, tc2) => {
+                            out.push(tc1);
+                            out.push(tc2);
+                            mapped_count += 2;
+                            at_word_start = false;
+                            idx += 2;
+                            continue;
+                        }
+                        _ => {}
+                    }
                 }
             }
+
+            // 2. Single-character lookup across base, shift, altgr, shift_altgr:
+            if let Some((sc, shift, altgr)) = self.find_char_ext(ch) {
+                let effective_shift = if src_is_georgian && dst_is_bicameral && !at_word_start {
+                    false
+                } else {
+                    shift
+                };
+                match dst.translation_at(sc, effective_shift, altgr) {
+                    ScanTranslation::Char(target_ch) => {
+                        out.push(target_ch);
+                        mapped_count += 1;
+                        at_word_start = false;
+                        idx += 1;
+                        continue;
+                    }
+                    ScanTranslation::Chars(tc1, tc2) => {
+                        out.push(tc1);
+                        out.push(tc2);
+                        mapped_count += 1;
+                        at_word_start = false;
+                        idx += 1;
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
             if ch.is_alphabetic() {
                 unmapped_alpha_count += 1;
             }
             out.push(ch);
+            at_word_start = false;
+            idx += 1;
         }
 
         (out, mapped_count, unmapped_alpha_count)
     }
 }
 
-fn translate_single(vk: u32, scan_code: u32, shift: bool, hkl: HKL) -> ScanTranslation {
+fn translate_single(
+    vk: u32,
+    scan_code: u32,
+    shift: bool,
+    altgr: bool,
+    hkl: HKL,
+) -> ScanTranslation {
     let mut key_state = [0u8; 256];
     if shift {
         key_state[VK_SHIFT_IDX] = 0x80;
+    }
+    if altgr {
+        key_state[VK_CONTROL_IDX] = 0x80;
+        key_state[VK_LCONTROL_IDX] = 0x80;
+        key_state[VK_MENU_IDX] = 0x80;
+        key_state[VK_RMENU_IDX] = 0x80;
     }
     let mut buf = [0u16; 8];
     let rc = unsafe {
@@ -264,13 +627,16 @@ fn translate_single(vk: u32, scan_code: u32, shift: bool, hkl: HKL) -> ScanTrans
         )
     };
     if rc < 0 {
-        ScanTranslation::DeadKey
+        let dead_ch = char::from_u32(buf[0] as u32).unwrap_or('´');
+        ScanTranslation::DeadKey(dead_ch)
     } else if rc == 0 {
         ScanTranslation::None
     } else {
         let s = String::from_utf16_lossy(&buf[..rc as usize]);
-        match s.chars().next() {
-            Some(c) if !c.is_control() => ScanTranslation::Char(c),
+        let mut chars = s.chars().filter(|c| !c.is_control());
+        match (chars.next(), chars.next()) {
+            (Some(c1), Some(c2)) => ScanTranslation::Chars(c1, c2),
+            (Some(c1), None) => ScanTranslation::Char(c1),
             _ => ScanTranslation::None,
         }
     }
@@ -326,8 +692,8 @@ pub fn last_word_run_for_fix(slots: &[KeyStrokeSlot]) -> &[KeyStrokeSlot] {
     }
 }
 
-/// Returns `true` if the rendered token looks like a URL, file path, or CLI flag (`AGENTS.md` #7).
-pub fn is_immune_token(rendered: &str) -> bool {
+/// Returns `true` if the rendered token is unconditionally immune (URL, protocol, UNC/drive path, CLI flag).
+pub fn is_unconditionally_immune_token(rendered: &str) -> bool {
     let trimmed = rendered.trim();
     if trimmed.is_empty() {
         return true;
@@ -339,13 +705,46 @@ pub fn is_immune_token(rendered: &str) -> bool {
         || lower.starts_with("ftp:")
         || lower.starts_with("file:")
         || lower.starts_with("--")
-        || lower.starts_with('/')
-        || lower.starts_with('\\')
+        || lower.starts_with(r"\\")
+        || trimmed.contains("://")
     {
         return true;
     }
-    // Path separators or protocol markers inside token.
-    trimmed.contains("://") || trimmed.contains('\\')
+    let bytes = trimmed.as_bytes();
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
+    {
+        return true;
+    }
+    false
+}
+
+/// Returns `true` if the rendered token looks like a URL, file path, or CLI flag (`AGENTS.md` #7).
+pub fn is_immune_token(rendered: &str) -> bool {
+    let trimmed = rendered.trim();
+    if is_unconditionally_immune_token(trimmed) {
+        return true;
+    }
+    if trimmed.starts_with('\\') {
+        return true;
+    }
+    // Leading '/' is a Unix path or slash-command ONLY when followed by ASCII characters
+    // (on Hebrew layout, physical 'Q' is '/', so English "question" typed on Hebrew starts with '/' followed by Hebrew!).
+    if let Some(rest) = trimmed.strip_prefix('/') {
+        if rest.is_empty() || rest.chars().all(|c| c.is_ascii()) {
+            return true;
+        }
+    }
+    // Internal backslash is a path separator (whereas a single trailing '\' on US QWERTY is scan code 0x2B = Italian 'ù').
+    if let Some(without_trailing_bs) = trimmed.strip_suffix('\\') {
+        if without_trailing_bs.contains('\\') {
+            return true;
+        }
+        return false;
+    }
+    trimmed.contains('\\')
 }
 
 #[cfg(test)]
@@ -379,6 +778,7 @@ mod tests {
             flags: 0,
             ms_tick: 100,
             shift,
+            altgr: false,
         }
     }
 
@@ -443,8 +843,67 @@ mod tests {
         assert!(is_immune_token(r"C:\projects\SmartBlink"));
         assert!(is_immune_token("--release"));
         assert!(is_immune_token("/usr/bin"));
+        assert!(!is_immune_token("/וקדאןםמ")); // Hebrew "question" where 'q' is '/'
+        assert!(!is_immune_token(r"pi\")); // Italian "più" where 'ù' is '\'
         assert!(!is_immune_token("ghbdtn"));
         assert!(!is_immune_token("привет"));
+    }
+
+    #[test]
+    fn dead_key_ligature_and_altgr_rendering_work() {
+        // 1. Dead key acute ('´' on 0x1A) + 'e' (0x12) -> "é":
+        let es = LayoutLayerTable::from_pairs(
+            HKL(0x040A040A as _),
+            &[(0x2E, 'c', 'C'), (0x1E, 'a', 'A'), (0x21, 'f', 'F'), (0x12, 'e', 'E')],
+        )
+        .with_dead_key(0x1A, false, '´');
+
+        let cafe_keys = [
+            slot(0x43, 0x2E, false),
+            slot(0x41, 0x1E, false),
+            slot(0x46, 0x21, false),
+            slot(0xDB, 0x1A, false), // dead key '´'
+            slot(0x45, 0x12, false), // 'e' -> 'é'
+        ];
+        assert_eq!(es.render_keys(&cafe_keys[..4]), None); // unresolved dead key at end returns None
+        assert_eq!(es.render_keys(&cafe_keys).as_deref(), Some("café"));
+
+        // 2. Arabic 2-char ligature 'لا' on scan code 0x30 ('B'):
+        let ar = LayoutLayerTable::from_pairs(HKL(0x04010401 as _), &[(0x1F, 'س', 'س'), (0x32, 'م', 'م')])
+            .with_ligature(0x30, false, 'ل', 'ا');
+        let us = LayoutLayerTable::from_pairs(
+            HKL(0x04090409 as _),
+            &[(0x1F, 's', 'S'), (0x30, 'b', 'B'), (0x32, 'm', 'M')],
+        );
+        let salam_keys = [
+            slot(0x53, 0x1F, false),
+            slot(0x42, 0x30, false),
+            slot(0x4D, 0x32, false),
+        ];
+        assert_eq!(ar.render_keys(&salam_keys).as_deref(), Some("سلام"));
+        assert_eq!(ar.convert_str_to("سلام", &us).0, "sbm");
+        assert_eq!(us.convert_str_to("sbm", &ar).0, "سلام");
+
+        // 3. Polish AltGr+Z -> 'ż':
+        let pl = LayoutLayerTable::from_pairs(
+            HKL(0x04150415 as _),
+            &[(0x32, 'm', 'M'), (0x18, 'o', 'O'), (0x2C, 'z', 'Z'), (0x12, 'e', 'E')],
+        )
+        .with_altgr_pairs(&[(0x2C, 'ż', 'Ż')]);
+        let moze_keys = [
+            slot(0x4D, 0x32, false),
+            slot(0x4F, 0x18, false),
+            KeyStrokeSlot {
+                vk: 0x5A,
+                scan_code: 0x2C,
+                flags: 0,
+                ms_tick: 120,
+                shift: false,
+                altgr: true,
+            },
+            slot(0x45, 0x12, false),
+        ];
+        assert_eq!(pl.render_keys(&moze_keys).as_deref(), Some("może"));
     }
 
     #[test]

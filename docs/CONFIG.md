@@ -6,7 +6,7 @@ SmartBlink stores its configuration in:
 %APPDATA%\SmartBlink\config.toml
 ```
 
-The file is created automatically with safe defaults on first launch and updated atomically (write to `config.toml.tmp`, `FlushFileBuffers` / `sync_all`, rename over `config.toml`) whenever settings are changed via the tray menu or the Settings window.
+The file is created automatically with safe defaults on first launch and updated atomically (write to `config.toml.<pid>.tmp`, `FlushFileBuffers` / `sync_all`, rename over `config.toml`) whenever settings are changed via the tray flyout or the Settings window. Files larger than 64 KB are ignored in favor of safe defaults, and `blacklist` is bounded to 256 entries.
 
 > **Privacy Guarantee:** `config.toml` never stores typed words, keystrokes, or session whitelist entries.
 

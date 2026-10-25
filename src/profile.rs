@@ -210,26 +210,78 @@ impl LanguageProfile {
     /// Works on tokens of any length `>= 1` so manual fix / burst expansion can score short words too.
     pub fn score_word(&self, rendered: &str) -> i32 {
         let trimmed = rendered.trim();
-        let mut chars: Vec<char> = trimmed
-            .chars()
-            .flat_map(|c| c.to_lowercase())
-            .collect();
+        if trimmed.is_empty() {
+            return FLOOR_SCORE;
+        }
+
+        // Count mid-word lowercase -> uppercase transitions for bicameral scripts
+        // (catches Georgian unicameral Shift-letters like "dRes" / "gTxovT" typed on EN layout).
+        let is_bicameral = matches!(self.script, 1 | 2 | 3 | 6);
+        let mut mid_word_caps_transitions = 0usize;
+        if is_bicameral {
+            let mut prev_lower = false;
+            for ch in trimmed.chars() {
+                if ch.is_uppercase() {
+                    if prev_lower {
+                        mid_word_caps_transitions += 1;
+                    }
+                    prev_lower = false;
+                } else if ch.is_lowercase() {
+                    prev_lower = true;
+                } else {
+                    prev_lower = false;
+                }
+            }
+        }
+
+        // Turkish-aware case folding ('İ' -> 'i', 'I' -> 'ı', strip '\u{0307}').
+        let mut chars: Vec<char> = Vec::with_capacity(trimmed.len());
+        if self.primary_lang == LANG_TURKISH {
+            for ch in trimmed.chars() {
+                match ch {
+                    'İ' => chars.push('i'),
+                    'I' => chars.push('ı'),
+                    '\u{0307}' => {}
+                    _ => {
+                        for lc in ch.to_lowercase() {
+                            if lc != '\u{0307}' {
+                                chars.push(lc);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            for ch in trimmed.chars() {
+                for lc in ch.to_lowercase() {
+                    if lc != '\u{0307}' {
+                        chars.push(lc);
+                    }
+                }
+            }
+        }
 
         if chars.is_empty() {
             return FLOOR_SCORE;
         }
 
-        // Strip leading and trailing sentence punctuation marks that are not letters in this alphabet
-        // (e.g. "hello,", "привет?.", "все,"), with a small penalty in case another layout maps that key to a letter.
+        // Only strip leading opening quotes/brackets (`"`, `'`, `«`, `(`, `[`) at word start
+        // so words starting with `,`, `.`, `;`, `/` (e.g. Hebrew `,a,`, Turkish `.ok`, Russian `;bpym`)
+        // retain their OOV penalty in the wrong layout.
         let mut stripped_punct_count = 0usize;
         while let Some(&first_ch) = chars.first() {
-            if is_sentence_punct(first_ch) && self.char_index(first_ch).is_none() && chars.len() > 1 {
+            if is_leading_quote_or_bracket(first_ch)
+                && self.char_index(first_ch).is_none()
+                && chars.len() > 1
+            {
                 chars.remove(0);
                 stripped_punct_count += 1;
             } else {
                 break;
             }
         }
+        // Strip trailing sentence punctuation marks that are not letters in this alphabet
+        // (e.g. "hello,", "привет?.", "все,"), with a small penalty in case another layout maps that key to a letter.
         while let Some(&last_ch) = chars.last() {
             if is_sentence_punct(last_ch) && self.char_index(last_ch).is_none() && chars.len() > 1 {
                 chars.pop();
@@ -239,10 +291,19 @@ impl LanguageProfile {
             }
         }
 
-        // Remove internal apostrophes when not part of this alphabet (e.g. English contractions "don't", "it's"),
+        // Greek word-final sigma normalization ('σ' -> 'ς' at end of word).
+        if self.primary_lang == LANG_GREEK {
+            if let Some(last) = chars.last_mut() {
+                if *last == 'σ' {
+                    *last = 'ς';
+                }
+            }
+        }
+
+        // Remove internal apostrophes when not part of this alphabet (e.g. English "don't", "I'm", Ukrainian "п'ять"),
         // while keeping them if they ARE letters in the target alphabet (e.g. 'э' in RU was already mapped).
-        if self.char_index('\'').is_none() && chars.len() >= 3 {
-            chars.retain(|&c| c != '\'' && c != '’');
+        if self.char_index('\'').is_none() && chars.len() >= 2 {
+            chars.retain(|&c| !matches!(c, '\'' | '’' | 'ʼ' | '`'));
         }
 
         let n = chars.len();
@@ -326,22 +387,39 @@ impl LanguageProfile {
         if stripped_punct_count > 0 {
             total -= (stripped_punct_count.min(2) as i32) * 14;
         }
+        if mid_word_caps_transitions > 0 {
+            total -= (mid_word_caps_transitions as i32) * 210;
+        }
         if vowel_count == 0 {
-            if cap >= 3 {
-                // A 3+ letter alphabetic word with zero vowels (e.g. "ghbdtn", "rfr", "xnj") is strongly implausible.
-                total -= (cap as i32) * 42;
-            } else if cap == 2 {
-                total -= 55;
-            } else if cap == 1 && self.lookup_trigram(0, indices[1], 0) < 0 {
-                // Single consonant that is not a standalone 1-letter word in this language (e.g. "b", "d", "z" in EN).
-                total -= 65;
+            // Hebrew (0x0D) and Arabic (0x01) are abjads where short vowels are omitted in standard orthography.
+            let is_abjad = matches!(self.primary_lang, LANG_HEBREW | LANG_ARABIC);
+            if !is_abjad {
+                if cap >= 3 {
+                    // A 3+ letter alphabetic word with zero vowels (e.g. "ghbdtn", "rfr", "xnj") is strongly implausible.
+                    total -= (cap as i32) * 42;
+                } else if cap == 2 {
+                    total -= 55;
+                } else if cap == 1 && self.lookup_trigram(0, indices[1], 0) < 0 {
+                    // Single consonant that is not a standalone 1-letter word in this language (e.g. "b", "d", "z" in EN).
+                    total -= 65;
+                }
+            } else if cap >= 5 {
+                // Even in unvocalized Hebrew/Arabic, 5+ letters without any mater lectionis (א, ה, ו, י / ا, و, ي, ى) is rare.
+                total -= ((cap - 4) as i32) * 25;
             }
         }
-        if max_consonant_run >= 5 {
+        if max_consonant_run >= 5 && !matches!(self.primary_lang, LANG_HEBREW | LANG_ARABIC) {
             total -= ((max_consonant_run - 4) as i32) * 55;
         }
-        if max_vowel_run >= 3 {
-            total -= ((max_vowel_run - 2) as i32) * 55;
+        // French, Dutch, and German frequently have 3-vowel sequences (-eau, -ieux, nieuw, mooie, Feuer, teuer).
+        let vowel_run_limit = if matches!(self.primary_lang, LANG_FRENCH | LANG_DUTCH | LANG_GERMAN)
+        {
+            4
+        } else {
+            3
+        };
+        if max_vowel_run >= vowel_run_limit {
+            total -= ((max_vowel_run + 1 - vowel_run_limit) as i32) * 55;
         }
         if max_repeat_run >= 3 {
             total -= 90;
@@ -353,11 +431,16 @@ impl LanguageProfile {
 }
 
 #[inline]
+fn is_leading_quote_or_bracket(ch: char) -> bool {
+    matches!(ch, '"' | '\'' | '«' | '(' | '[')
+}
+
+#[inline]
 fn is_sentence_punct(ch: char) -> bool {
     matches!(
         ch,
-        '.' | ',' | '!' | '?' | ':' | ';' | '"' | '\'' | '(' | ')' | '«' | '»'
-            | '&' | '/' | '^' | '$' | '@' | '#'
+        '.' | ',' | '!' | '?' | ':' | ';' | '"' | '\'' | '(' | ')' | '[' | ']' | '«' | '»'
+            | '&' | '/' | '^' | '$' | '@' | '#' | '`' | '~'
     )
 }
 
@@ -368,7 +451,8 @@ pub fn is_immune_word(rendered: &str) -> bool {
         return true;
     }
     // Strip trailing punctuation before checking for path/code characters so a trailing '/'
-    // (which is '.' on the Russian layout!) does not falsely mark a sentence-ending word as a Unix path.
+    // (which is '.' on the Russian layout!) or trailing '\' (which is 'ù' on Italian layout!)
+    // does not falsely mark a sentence-ending word as a file path.
     let core = trimmed.trim_end_matches(|c: char| !c.is_alphabetic() && !c.is_ascii_digit());
     if core.is_empty() {
         return false;
@@ -400,6 +484,23 @@ pub fn profile_for_primary_lang(primary_lang: u16) -> Option<&'static LanguagePr
         .find(|p| p.primary_lang == primary_lang)
 }
 
+/// Check whether `rendered` is a clean alphabetic word (allowing trailing sentence punctuation).
+fn is_pure_alphabetic_candidate(rendered: &str) -> bool {
+    let trimmed = rendered.trim();
+    let core = trimmed.trim_end_matches(is_sentence_punct);
+    let mut count = 0usize;
+    for ch in core.chars() {
+        if ch.is_alphabetic() || matches!(ch, '\'' | '’' | 'ʼ') {
+            if ch.is_alphabetic() {
+                count += 1;
+            }
+        } else {
+            return false;
+        }
+    }
+    count >= MIN_WORD_LEN
+}
+
 /// Evaluate a slice of keystroke slots against pre-built `LayoutLayerTable`s.
 pub fn evaluate_tables(
     word_keys: &[KeyStrokeSlot],
@@ -421,8 +522,23 @@ pub fn evaluate_tables(
         })?;
 
     let current_rendered = current_table.render_keys(word_keys)?;
-    if is_immune_word(&current_rendered) {
+    if layout::is_unconditionally_immune_token(&current_rendered) {
         return None;
+    }
+    if is_immune_word(&current_rendered) {
+        // On French AZERTY (é=2, è=7, ç=9, à=0), Czech QWERTZ (ě=2..é=0), Kazakh (ә=2..һ=0),
+        // Armenian (1..=), Italian (ù=\), and Hebrew (/=q), top-row or slash keys produce digits
+        // or slashes in US QWERTY. Allow scoring ONLY if at least one candidate layout renders
+        // these exact keystrokes into a purely alphabetic word!
+        let has_pure_alpha_candidate = tables.iter().any(|&t| {
+            t.hkl != current_table.hkl
+                && t.render_keys(word_keys)
+                    .map(|r| is_pure_alphabetic_candidate(&r))
+                    .unwrap_or(false)
+        });
+        if !has_pure_alpha_candidate {
+            return None;
+        }
     }
 
     let current_profile = profile_for_primary_lang(current_table.primary_lang)?;
@@ -639,6 +755,7 @@ mod tests {
                 flags: 0,
                 ms_tick: (idx as u32) * 40,
                 shift: found.1,
+                altgr: false,
             });
         }
         out
@@ -967,5 +1084,153 @@ mod tests {
             "average scoring time {:.2} us exceeded 100 us (0.1 ms) budget",
             avg_us
         );
+    }
+
+    #[test]
+    fn twenty_layout_skeptic_suite_fr_cs_kk_hy_tr_he_ka() {
+        const FR_HKL: HKL = HKL(0x040C040C as _);
+        const CS_HKL: HKL = HKL(0x04050405 as _);
+        const KK_HKL: HKL = HKL(0x043F043F as _);
+        const HY_HKL: HKL = HKL(0x042B042B as _);
+        const HE_HKL: HKL = HKL(0x040D040D as _);
+        const KA_HKL: HKL = HKL(0x04370437 as _);
+
+        let mut us_with_num = US_LAYOUT.to_vec();
+        us_with_num.extend_from_slice(&[
+            (0x03, '2', '@'),
+            (0x04, '3', '#'),
+            (0x05, '4', '$'),
+            (0x06, '5', '%'),
+            (0x07, '6', '^'),
+            (0x09, '8', '*'),
+            (0x0A, '9', '('),
+            (0x0B, '0', ')'),
+        ]);
+        let us = LayoutLayerTable::from_pairs(US_HKL, &us_with_num);
+
+        // 1. French AZERTY top-row accented letters ('é' on '2'=0x03, 'è' on '7'=0x08, 'à' on '0'=0x0B):
+        // Typing "déjà" on US layout produces "d2j0" (contains 2 digits!) -> must NOT be blocked by digit immunity!
+        let mut fr_pairs = us_with_num.clone();
+        for e in &mut fr_pairs {
+            match e.0 {
+                0x03 => *e = (0x03, 'é', '2'),
+                0x08 => *e = (0x08, 'è', '7'),
+                0x0B => *e = (0x0B, 'à', '0'),
+                _ => {}
+            }
+        }
+        let fr = LayoutLayerTable::from_pairs(FR_HKL, &fr_pairs);
+        let deja_keys = type_on_layout("déjà", &fr_pairs);
+        assert_eq!(us.render_keys(&deja_keys).as_deref(), Some("d2j0"));
+        let v_fr = evaluate_tables(&deja_keys, US_HKL, &[&us, &fr])
+            .expect("FR 'déjà' ('d2j0' in US) must be detected");
+        assert_eq!(v_fr.target_hkl, FR_HKL);
+        assert_eq!(v_fr.rendered_target, "déjà");
+
+        // 2. Czech QWERTZ top-row caron letters ('š' on '3'=0x04, 'č' on '4'=0x05):
+        // Typing "čeština" on US layout produces "4e3tina" -> must be detected as CS!
+        let mut cs_pairs = us_with_num.clone();
+        for e in &mut cs_pairs {
+            match e.0 {
+                0x04 => *e = (0x04, 'š', '3'),
+                0x05 => *e = (0x05, 'č', '4'),
+                _ => {}
+            }
+        }
+        let cs = LayoutLayerTable::from_pairs(CS_HKL, &cs_pairs);
+        let cestina_keys = type_on_layout("čeština", &cs_pairs);
+        assert_eq!(us.render_keys(&cestina_keys).as_deref(), Some("4e3tina"));
+        let v_cs = evaluate_tables(&cestina_keys, US_HKL, &[&us, &cs])
+            .expect("CS 'čeština' ('4e3tina' in US) must be detected");
+        assert_eq!(v_cs.target_hkl, CS_HKL);
+        assert_eq!(v_cs.rendered_target, "čeština");
+
+        // 3. Kazakh Cyrillic top-row letters ('ә' on '2'=0x03, 'қ' on '8'=0x09):
+        let mut kk_pairs = RU_LAYOUT.to_vec();
+        kk_pairs.extend_from_slice(&[(0x03, 'ә', 'Ә'), (0x09, 'қ', 'Қ')]);
+        let kk = LayoutLayerTable::from_pairs(KK_HKL, &kk_pairs);
+        let salem_keys = type_on_layout("сәлем", &kk_pairs);
+        assert_eq!(us.render_keys(&salem_keys).as_deref(), Some("c2ktv"));
+        let v_kk = evaluate_tables(&salem_keys, US_HKL, &[&us, &kk])
+            .expect("KK 'сәлем' ('c2ktv' in US) must be detected");
+        assert_eq!(v_kk.target_hkl, KK_HKL);
+        assert_eq!(v_kk.rendered_target, "сәлем");
+
+        // 4. Armenian top-row letters ('ր' on '8'=0x09):
+        let hy_pairs: &[(u8, char, char)] = &[
+            (0x14, 'տ', 'Տ'),
+            (0x1E, 'ա', 'Ա'),
+            (0x09, 'ր', 'Ր'),
+            (0x17, 'ի', 'Ի'),
+        ];
+        let hy = LayoutLayerTable::from_pairs(HY_HKL, hy_pairs);
+        let tari_keys = type_on_layout("տարի", hy_pairs);
+        assert_eq!(us.render_keys(&tari_keys).as_deref(), Some("ta8i"));
+        let v_hy = evaluate_tables(&tari_keys, US_HKL, &[&us, &hy])
+            .expect("HY 'տարի' ('ta8i' in US) must be detected");
+        assert_eq!(v_hy.target_hkl, HY_HKL);
+        assert_eq!(v_hy.rendered_target, "տարի");
+
+        // 5. Turkish capital 'İ' ('İstanbul') must not suffer combining-dot OOV penalty:
+        let tr_prof = profile_for_primary_lang(LANG_TURKISH).unwrap();
+        let score_upper = tr_prof.score_word("İstanbul");
+        let score_lower = tr_prof.score_word("istanbul");
+        assert_eq!(
+            score_upper, score_lower,
+            "Turkish 'İstanbul' must fold 'İ' cleanly to 'i' without U+0307 OOV penalty"
+        );
+
+        // 6. Hebrew ('q' is '/' on 0x10) and Hebrew Vav/Yod vowels:
+        let he_pairs: &[(u8, char, char)] = &[
+            (0x10, '/', 'Q'),
+            (0x11, '\'', 'W'),
+            (0x12, 'ק', 'E'),
+            (0x13, 'ר', 'R'),
+            (0x14, 'א', 'T'),
+            (0x15, 'ט', 'Y'),
+            (0x16, 'ו', 'U'),
+            (0x17, 'ן', 'I'),
+            (0x18, 'ם', 'O'),
+            (0x19, 'פ', 'P'),
+            (0x1E, 'ש', 'A'),
+            (0x1F, 'ד', 'S'),
+            (0x20, 'ג', 'D'),
+            (0x21, 'כ', 'F'),
+            (0x22, 'ע', 'G'),
+            (0x23, 'י', 'H'),
+            (0x24, 'ח', 'J'),
+            (0x25, 'ל', 'K'),
+            (0x26, 'ך', 'L'),
+            (0x2C, 'ז', 'Z'),
+            (0x2D, 'ס', 'X'),
+            (0x2E, 'ב', 'C'),
+            (0x2F, 'ה', 'V'),
+            (0x30, 'נ', 'B'),
+            (0x31, 'מ', 'N'),
+            (0x32, 'צ', 'M'),
+            (0x33, 'ת', '<'),
+        ];
+        let he = LayoutLayerTable::from_pairs(HE_HKL, he_pairs);
+        let q_keys = type_on_layout("question", &us_with_num);
+        assert_eq!(he.render_keys(&q_keys).as_deref(), Some("/וקדאןםמ"));
+        let v_he_to_en = evaluate_tables(&q_keys, HE_HKL, &[&he, &us])
+            .expect("EN 'question' ('/וקדאןםמ' on HE) must not be blocked by '/' path immunity");
+        assert_eq!(v_he_to_en.target_hkl, US_HKL);
+        assert_eq!(v_he_to_en.rendered_target, "question");
+
+        // 7. Georgian unicameral Shift-letters ('ღ' on Shift+R = 0x13):
+        let ka_pairs: &[(u8, char, char)] = &[
+            (0x20, 'დ', 'D'),
+            (0x13, 'რ', 'ღ'),
+            (0x12, 'ე', 'E'),
+            (0x1F, 'ს', 'შ'),
+        ];
+        let ka = LayoutLayerTable::from_pairs(KA_HKL, ka_pairs);
+        let dges_keys = type_on_layout("დღეს", ka_pairs);
+        assert_eq!(us.render_keys(&dges_keys).as_deref(), Some("dRes"));
+        let v_ka = evaluate_tables(&dges_keys, US_HKL, &[&us, &ka])
+            .expect("KA 'დღეს' ('dRes' in US) must be detected");
+        assert_eq!(v_ka.target_hkl, KA_HKL);
+        assert_eq!(v_ka.rendered_target, "დღეს");
     }
 }

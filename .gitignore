@@ -1,3 +1,10 @@
 # Rust build output
 /target
 /tools/profilegen/target
+/tools/profilegen/Cargo.lock
+
+# Local scratch & session lock files
+/scratch/
+/scratch_*.log
+/.system/ui_session_lock.md
+/assets/icon_*.png

@@ -1,10 +1,16 @@
 [package]
 name = "smartblink"
 version = "1.0.0"
-description = "Wrong-layout typing detection and one-gesture fix for Windows"
+description = "Privacy-first Windows 10/11 tray utility that detects wrong keyboard layout typing with LED + audio alerts and fixes words on a single manual gesture (no auto-replace)."
+authors = ["VKV Studio <https://vkvstudio.com>"]
 license = "MIT"
 edition = "2021"
 rust-version = "1.75"
+readme = "README.md"
+homepage = "https://vkvstudio.com"
+repository = "https://github.com/vkvstudio/SmartBlink"
+keywords = ["windows", "keyboard", "layout-switcher", "punto-switcher", "tray-utility"]
+categories = ["os::windows-apis", "command-line-utilities", "internationalization"]
 build = "build.rs"
 
 [[bin]]

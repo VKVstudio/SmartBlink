@@ -63,6 +63,7 @@ pub struct KeyStrokeSlot {
     pub flags: u32,
     pub ms_tick: u32,
     pub shift: bool,
+    pub altgr: bool,
 }
 
 impl KeyStrokeSlot {
@@ -73,9 +74,13 @@ impl KeyStrokeSlot {
             flags: 0,
             ms_tick: 0,
             shift: false,
+            altgr: false,
         }
     }
 }
+
+const LLKHF_EXTENDED_FLAG: u32 = 0x01;
+const ALTGR_SYNTHETIC_WINDOW_MS: u32 = 50;
 
 pub struct WordBuffer {
     slots: [KeyStrokeSlot; MAX_WORD_KEYS],
@@ -83,9 +88,15 @@ pub struct WordBuffer {
     last_tick: Option<u32>,
     lshift_down: bool,
     rshift_down: bool,
-    ctrl_down: bool,
-    alt_down: bool,
+    lctrl_down: bool,
+    rctrl_down: bool,
+    lalt_down: bool,
+    ralt_down: bool,
     win_down: bool,
+    lctrl_down_tick: Option<u32>,
+    altgr_backup: [KeyStrokeSlot; MAX_WORD_KEYS],
+    altgr_backup_len: usize,
+    altgr_backup_tick: Option<u32>,
 }
 
 impl Default for WordBuffer {
@@ -97,6 +108,7 @@ impl Default for WordBuffer {
 impl Drop for WordBuffer {
     fn drop(&mut self) {
         self.reset();
+        self.clear_altgr_backup();
     }
 }
 
@@ -108,9 +120,15 @@ impl WordBuffer {
             last_tick: None,
             lshift_down: false,
             rshift_down: false,
-            ctrl_down: false,
-            alt_down: false,
+            lctrl_down: false,
+            rctrl_down: false,
+            lalt_down: false,
+            ralt_down: false,
             win_down: false,
+            lctrl_down_tick: None,
+            altgr_backup: [KeyStrokeSlot::zeroed(); MAX_WORD_KEYS],
+            altgr_backup_len: 0,
+            altgr_backup_tick: None,
         }
     }
 
@@ -125,13 +143,27 @@ impl WordBuffer {
         self.last_tick = None;
     }
 
+    fn clear_altgr_backup(&mut self) {
+        for slot in &mut self.altgr_backup[..self.altgr_backup_len] {
+            unsafe {
+                ptr::write_volatile(slot, KeyStrokeSlot::zeroed());
+            }
+        }
+        self.altgr_backup_len = 0;
+        self.altgr_backup_tick = None;
+        self.lctrl_down_tick = None;
+    }
+
     /// Clear tracked modifier flags (called on focus change, mouse click, or synthetic injection).
     pub fn clear_modifiers(&mut self) {
         self.lshift_down = false;
         self.rshift_down = false;
-        self.ctrl_down = false;
-        self.alt_down = false;
+        self.lctrl_down = false;
+        self.rctrl_down = false;
+        self.lalt_down = false;
+        self.ralt_down = false;
         self.win_down = false;
+        self.clear_altgr_backup();
     }
 
     /// Drop the oldest word (up to the first `VK_SPACE`) so a long multi-word sentence never wipes
@@ -185,9 +217,30 @@ impl WordBuffer {
                         self.lshift_down = false;
                         self.rshift_down = false;
                     }
-                    _ => {
-                        self.update_modifier(rec.vk, false);
+                    VK_LCONTROL => {
+                        self.lctrl_down = false;
+                        self.clear_altgr_backup();
                     }
+                    VK_RCONTROL => self.rctrl_down = false,
+                    VK_CONTROL => {
+                        if (rec.flags & LLKHF_EXTENDED_FLAG) != 0 {
+                            self.rctrl_down = false;
+                        } else {
+                            self.lctrl_down = false;
+                            self.clear_altgr_backup();
+                        }
+                    }
+                    VK_LMENU => self.lalt_down = false,
+                    VK_RMENU => self.ralt_down = false,
+                    VK_MENU => {
+                        if (rec.flags & LLKHF_EXTENDED_FLAG) != 0 {
+                            self.ralt_down = false;
+                        } else {
+                            self.lalt_down = false;
+                        }
+                    }
+                    VK_LWIN | VK_RWIN => self.win_down = false,
+                    _ => {}
                 }
             }
             InputKind::KeyDown => {
@@ -204,13 +257,106 @@ impl WordBuffer {
                         self.lshift_down = true;
                         return;
                     }
+                    VK_RMENU => {
+                        if !self.ralt_down {
+                            self.ralt_down = true;
+                            if self.altgr_backup_len > 0 {
+                                let within_window = self
+                                    .lctrl_down_tick
+                                    .map(|t| rec.ms_tick.wrapping_sub(t) <= ALTGR_SYNTHETIC_WINDOW_MS)
+                                    .unwrap_or(false);
+                                if within_window {
+                                    let n = self.altgr_backup_len;
+                                    self.slots[..n].copy_from_slice(&self.altgr_backup[..n]);
+                                    self.len = n;
+                                    self.last_tick = self.altgr_backup_tick;
+                                }
+                                self.clear_altgr_backup();
+                            }
+                        }
+                        return;
+                    }
+                    VK_MENU if (rec.flags & LLKHF_EXTENDED_FLAG) != 0 => {
+                        if !self.ralt_down {
+                            self.ralt_down = true;
+                            if self.altgr_backup_len > 0 {
+                                let within_window = self
+                                    .lctrl_down_tick
+                                    .map(|t| rec.ms_tick.wrapping_sub(t) <= ALTGR_SYNTHETIC_WINDOW_MS)
+                                    .unwrap_or(false);
+                                if within_window {
+                                    let n = self.altgr_backup_len;
+                                    self.slots[..n].copy_from_slice(&self.altgr_backup[..n]);
+                                    self.len = n;
+                                    self.last_tick = self.altgr_backup_tick;
+                                }
+                                self.clear_altgr_backup();
+                            }
+                        }
+                        return;
+                    }
+                    VK_LCONTROL => {
+                        if self.ralt_down {
+                            self.lctrl_down = true;
+                            return;
+                        }
+                        if !self.lctrl_down
+                            && !self.rctrl_down
+                            && !self.lalt_down
+                            && !self.win_down
+                            && self.len > 0
+                        {
+                            self.altgr_backup[..self.len].copy_from_slice(&self.slots[..self.len]);
+                            self.altgr_backup_len = self.len;
+                            self.altgr_backup_tick = self.last_tick;
+                            self.lctrl_down_tick = Some(rec.ms_tick);
+                        }
+                        self.lctrl_down = true;
+                        self.reset();
+                        return;
+                    }
+                    VK_CONTROL if (rec.flags & LLKHF_EXTENDED_FLAG) == 0 => {
+                        if self.ralt_down {
+                            self.lctrl_down = true;
+                            return;
+                        }
+                        if !self.lctrl_down
+                            && !self.rctrl_down
+                            && !self.lalt_down
+                            && !self.win_down
+                            && self.len > 0
+                        {
+                            self.altgr_backup[..self.len].copy_from_slice(&self.slots[..self.len]);
+                            self.altgr_backup_len = self.len;
+                            self.altgr_backup_tick = self.last_tick;
+                            self.lctrl_down_tick = Some(rec.ms_tick);
+                        }
+                        self.lctrl_down = true;
+                        self.reset();
+                        return;
+                    }
+                    VK_RCONTROL | VK_CONTROL => {
+                        self.rctrl_down = true;
+                        self.clear_altgr_backup();
+                        self.reset();
+                        return;
+                    }
+                    VK_LMENU | VK_MENU => {
+                        self.lalt_down = true;
+                        self.clear_altgr_backup();
+                        self.reset();
+                        return;
+                    }
+                    VK_LWIN | VK_RWIN => {
+                        self.win_down = true;
+                        self.clear_altgr_backup();
+                        self.reset();
+                        return;
+                    }
                     _ => {}
                 }
-                if self.update_modifier(rec.vk, true) {
-                    // Pressing Ctrl, Alt, or Win resets the active word buffer.
-                    self.reset();
-                    return;
-                }
+
+                self.clear_altgr_backup();
 
                 // Ignore pure lock/pause keys for word buffer content.
                 if is_non_text_toggle_or_shift(rec.vk) {
@@ -225,8 +371,14 @@ impl WordBuffer {
                     }
                 }
 
-                // Any chord while Ctrl, Alt, or Win is held resets and stays ignored.
-                if self.ctrl_down || self.alt_down || self.win_down {
+                let altgr_active = self.ralt_down && !self.lalt_down && !self.rctrl_down && !self.win_down;
+                let non_altgr_mod = (self.lctrl_down && !self.ralt_down)
+                    || self.rctrl_down
+                    || self.lalt_down
+                    || self.win_down;
+
+                // Any chord while non-AltGr Ctrl, Left Alt, or Win is held resets and stays ignored.
+                if non_altgr_mod {
                     self.reset();
                     return;
                 }
@@ -260,29 +412,11 @@ impl WordBuffer {
                     flags: rec.flags,
                     ms_tick: rec.ms_tick,
                     shift: self.lshift_down || self.rshift_down,
+                    altgr: altgr_active,
                 };
                 self.len += 1;
                 self.last_tick = Some(rec.ms_tick);
             }
-        }
-    }
-
-    /// Updates Ctrl/Alt/Win state. Returns `true` if `vk` is a Ctrl/Alt/Win modifier.
-    fn update_modifier(&mut self, vk: u16, down: bool) -> bool {
-        match vk {
-            VK_CONTROL | VK_LCONTROL | VK_RCONTROL => {
-                self.ctrl_down = down;
-                true
-            }
-            VK_MENU | VK_LMENU | VK_RMENU => {
-                self.alt_down = down;
-                true
-            }
-            VK_LWIN | VK_RWIN => {
-                self.win_down = down;
-                true
-            }
-            _ => false,
         }
     }
 }
@@ -312,9 +446,12 @@ fn is_navigation_or_reset_vk(vk: u16) -> bool {
             | VK_UP
             | VK_RIGHT
             | VK_DOWN
+            | 0x2C // VK_SNAPSHOT (PrintScreen)
             | VK_INSERT
             | VK_DELETE
+            | 0x5D // VK_APPS (Context Menu)
             | 0x70..=0x87 // F1..F24
+            | 0xA6..=0xB7 // Browser & Media keys
     )
 }
 
@@ -367,6 +504,7 @@ pub fn start(
             }
             let mut signal = SignalEngine::start(notify_mode, led_mode);
             let mut last_verdict: Option<DetectionVerdict> = None;
+            let mut last_undo_fix: Option<(fix::FixPlan, isize, Instant)> = None;
             let mut word_blinked = false;
             let mut pending_caps_blink = false;
             let mut word_alerted = false;
@@ -397,6 +535,7 @@ pub fn start(
                     if last_verdict.is_some() {
                         last_verdict = None;
                     }
+                    last_undo_fix = None;
                     word_blinked = false;
                     pending_caps_blink = false;
                     word_alerted = false;
@@ -405,6 +544,21 @@ pub fn start(
                     global_ring().clear_and_zero();
                     thread::sleep(Duration::from_millis(WORKER_TICK_MS));
                     continue;
+                }
+
+                // Active idle timeout: wipe stale buffer if user has not typed for IDLE_RESET_MS.
+                if let Some(t_last) = last_key_instant {
+                    if t_last.elapsed() > Duration::from_millis(IDLE_RESET_MS as u64) {
+                        word_buf.reset();
+                        word_buf.clear_modifiers();
+                        zero_and_clear_vec(&mut ctrl_snapshot);
+                        last_verdict = None;
+                        last_undo_fix = None;
+                        word_blinked = false;
+                        pending_caps_blink = false;
+                        word_alerted = false;
+                        last_key_instant = None;
+                    }
                 }
 
                 let mut status = focus.update(&blacklist);
@@ -435,6 +589,7 @@ pub fn start(
                         fix_detector.reset();
                         selection_detector.reset();
                         last_verdict = None;
+                        last_undo_fix = None;
                         word_blinked = false;
                         pending_caps_blink = false;
                         word_alerted = false;
@@ -449,6 +604,7 @@ pub fn start(
                     {
                         // Focus within the same HWND may have moved into or out of a password box.
                         focus.invalidate();
+                        last_undo_fix = None;
                     }
                     if status.is_immune {
                         continue;
@@ -505,6 +661,7 @@ pub fn start(
                         selection_detector.reset();
                         zero_and_clear_vec(&mut ctrl_snapshot);
                         last_verdict = None;
+                        last_undo_fix = None;
                         word_blinked = false;
                         pending_caps_blink = false;
                         word_alerted = false;
@@ -521,13 +678,30 @@ pub fn start(
                         };
                         let hwnd = focus.current_hwnd();
                         let cur_hkl = layout::window_layout(hwnd);
-                        if let Some(plan) = fix::plan_word_fix_cached(
-                            slots,
-                            cur_hkl,
-                            &active_hkls,
-                            &mut layout_cache,
-                        ) {
-                            let _ = fix::execute_fix(&plan, hwnd);
+                        if !slots.is_empty() {
+                            if let Some(plan) = fix::plan_word_fix_cached(
+                                slots,
+                                cur_hkl,
+                                &active_hkls,
+                                &mut layout_cache,
+                            ) {
+                                if fix::execute_fix(&plan, hwnd) {
+                                    let undo_plan = fix::FixPlan {
+                                        current_hkl: plan.target_hkl,
+                                        target_hkl: plan.current_hkl,
+                                        backspace_count: plan.replacement_text.chars().count(),
+                                        original_text: plan.replacement_text,
+                                        replacement_text: plan.original_text,
+                                    };
+                                    last_undo_fix = Some((undo_plan, hwnd.0 as isize, Instant::now()));
+                                }
+                            }
+                        } else if let Some((undo_plan, undo_hwnd, undo_time)) = last_undo_fix.take() {
+                            if undo_hwnd == hwnd.0 as isize
+                                && undo_time.elapsed() <= Duration::from_secs(10)
+                            {
+                                let _ = fix::execute_fix(&undo_plan, hwnd);
+                            }
                         }
                         word_buf.reset();
                         word_buf.clear_modifiers();
@@ -549,6 +723,7 @@ pub fn start(
                     } else if rec.kind == InputKind::KeyDown && word_buf.len() != prev_len {
                         had_typing_key = true;
                         last_key_instant = Some(Instant::now());
+                        last_undo_fix = None;
                     }
                 }
 
@@ -730,5 +905,45 @@ mod tests {
         buf.feed(key_down(0x43, 0x2E, 1100 + IDLE_RESET_MS + 100));
         assert_eq!(buf.len(), 1);
         assert_eq!(buf.as_slice()[0].vk, 0x43);
+    }
+
+    #[test]
+    fn altgr_preserves_word_and_marks_altgr_slot() {
+        let mut buf = WordBuffer::new();
+        // Type "mo"
+        buf.feed(key_down(0x4D, 0x32, 100));
+        buf.feed(key_down(0x4F, 0x18, 120));
+        assert_eq!(buf.len(), 2);
+
+        // Windows AltGr sequence: synthetic VK_LCONTROL followed immediately by VK_RMENU
+        buf.feed(key_down(VK_LCONTROL, 0x1D, 140));
+        buf.feed(InputRecord {
+            vk: VK_RMENU,
+            scan_code: 0x38,
+            flags: LLKHF_EXTENDED_FLAG,
+            ms_tick: 141,
+            kind: InputKind::KeyDown,
+            _pad: [0; 3],
+        });
+        assert_eq!(buf.len(), 2, "AltGr must restore the word buffer");
+
+        // Press 'Z' while AltGr is held (Polish 'ż')
+        buf.feed(key_down(0x5A, 0x2C, 160));
+        assert_eq!(buf.len(), 3);
+        assert!(buf.as_slice()[2].altgr);
+
+        // Release AltGr and type 'e'
+        buf.feed(key_up(VK_LCONTROL, 0x1D, 180));
+        buf.feed(InputRecord {
+            vk: VK_RMENU,
+            scan_code: 0x38,
+            flags: LLKHF_EXTENDED_FLAG,
+            ms_tick: 181,
+            kind: InputKind::KeyUp,
+            _pad: [0; 3],
+        });
+        buf.feed(key_down(0x45, 0x12, 200));
+        assert_eq!(buf.len(), 4);
+        assert!(!buf.as_slice()[3].altgr);
     }
 }

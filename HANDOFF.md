@@ -342,3 +342,27 @@ All 12 milestones (M1–M12) are complete. Await owner desktop verification and 
 - Updated Antigravity project workspace registry (`C:\Users\user\.gemini\config\projects\37e4e154-6d44-4f0b-87f1-709cf6959264.json`) to remove the stale legacy folder entry, leaving `C:\projects\SmartBlink` as the single source of truth.
 - Replaced all remaining old-folder references across `src/layout.rs`, `ARCHITECTURE.md`, `.system/checkpoint.md`, and `HANDOFF.md`.
 - Executed full `cargo clean` + release rebuild in both `tools/profilegen` and the root crate (`C:\projects\SmartBlink`), purging 170 stale `.d` dependency files that referenced the old folder path, and rebuilt `target\installer\SmartBlink-Setup-1.0.0.exe` + `SHA256SUMS.txt`.
+
+## Session #023 — 2026-10-25 — Multi-Persona (8 Roles) + 20-Layout Skeptic Audit, Fixes & GitHub Prep
+
+**Done**
+- Executed 10 parallel `flash` subagents covering all 8 role skeptics (Security Auditor, Input-Utility Systems Programmer, Everyday Power User, Novice User, Legal/Privacy Auditor, Product Director/CEO, Marketer, SEO/GEO Specialist) and all 20 built-in layout/country skeptics (`EN, RU, UK, BE, KK, DE, FR, ES, PT, IT, TR, PL, NL, SV, CS, EL, HE, AR, HY, KA`).
+- **Profile Generator & 20 Language Binaries (`tools/profilegen`, `assets/profiles/*.bin`):**
+  - Fixed Hebrew vowel mask in `tools/profilegen/src/main.rs` (`ו` `U+05D5` and `י` `U+05D9` instead of Arabic `و` `U+0648` and `ي` `U+064A`).
+  - Added Turkish-aware case folding (`İ` -> `i`, `I` -> `ı`, strip `U+0307`) and cleaned foreign-script noise across `DE`, `FR`, `TR`, `EL`, `SV`, `AR`, `BE` corpora; regenerated all 20 `assets/profiles/*.bin` (`61,766` bytes total).
+- **20-Layout Detection, `AltGr`, Dead Keys, Ligatures & Fix Engine (`src/worker.rs`, `src/layout.rs`, `src/profile.rs`, `src/fix.rs`):**
+  - Added `altgr` and `shift_altgr` layers to `LayoutLayerTable` (`src/layout.rs`) and updated `WordBuffer` (`src/worker.rs`) to preserve/restore word slots across synthetic `VK_LCONTROL` + `VK_RMENU` (`AltGr`).
+  - Implemented 2-key dead-key composition (`combine_dead_key`) and 2-char ligatures (`ScanTranslation::Chars(c1, c2)` for Arabic `لا` on scan code `0x30`).
+  - Added candidate-aware digit/slash immunity in `evaluate_tables` (`src/profile.rs`) so top-row letters (`FR` `"d2j0"`->`"déjà"`, `CS` `"4e3tina"`->`"čeština"`, `KK` `"c2ktv"`->`"сәлем"`, `HY` `"ta8i"`->`"տարի"`), Italian `"pi\\"`->`"più"`, and Hebrew `"/וקדאןםמ"`->`"question"` are detected while real numbers/URLs/paths stay immune.
+  - Added mid-word lowercase->uppercase penalty for bicameral scripts (catching Georgian unicameral Shift-letters `"dRes"`->`"დღეს"`), separated leading vs trailing punctuation stripping, added active idle timeout in the worker loop, and added 10-second reversible fix (undo on second fix gesture when `word_buf` is empty).
+- **Security, UX & GitHub Release Preparation (`src/hooks.rs`, `src/clipboard.rs`, `src/config.rs`, `src/autostart.rs`, `src/settings.rs`, `src/tray.rs`, `src/main.rs`, `README.md`, `README.ru.md`):**
+  - Wired `SUPPRESS_DEPTH` into `low_level_keyboard_proc` (`src/hooks.rs`).
+  - Updated `SelectionHotkeyDetector` (`src/clipboard.rs`) to require Left Alt (`VK_LMENU`) and ignore `VK_RMENU` so `AltGr+Z` (Polish `ż`) never triggers clipboard conversion; added `16 MB`/`32 MB` clipboard snapshot caps and volatile RAM zeroing.
+  - Added `64 KB` file size cap, `256` blacklist cap, and PID-qualified atomic temp file in `src/config.rs`; resolved explicit `%SystemRoot%\System32\schtasks.exe` and `notepad.exe` paths in `src/autostart.rs` and `src/settings.rs`.
+  - Fixed `Sel: Ctrl+Alt+Z` hero badge text clipping in `src/settings.rs` and added second-instance `WM_APP_OPEN_SETTINGS` activation in `src/main.rs` & `src/tray.rs`.
+  - Embedded `SmartBlink_preview.png`, comparison table, and FAQ in `README.md` and `README.ru.md`, and updated `Cargo.toml`, `CHANGELOG.md`, `installer/SmartBlink.iss`, `.github/workflows/release.yml`, and `.gitignore`.
+
+**Verified**
+- `cargo test --release` -> `46 passed; 0 failed` (`0.40s`).
+- `cargo build --release` -> 0 warnings (`smartblink.exe`, `612,352` bytes).
+- `ISCC.exe installer\SmartBlink.iss` -> `target\installer\SmartBlink-Setup-1.0.0.exe` (`2,327,059` bytes) + `target\installer\SHA256SUMS.txt`.

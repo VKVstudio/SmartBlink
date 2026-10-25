@@ -147,9 +147,16 @@ pub fn delete_run_value_named(value_name: &str) -> bool {
     }
 }
 
+fn schtasks_path() -> std::path::PathBuf {
+    let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+    std::path::PathBuf::from(root)
+        .join("System32")
+        .join("schtasks.exe")
+}
+
 /// Check whether the optional `SmartBlink` ONLOGON scheduled task exists.
 pub fn is_elevated_task_registered() -> bool {
-    Command::new("schtasks.exe")
+    Command::new(schtasks_path())
         .args(["/Query", "/TN", ELEVATED_TASK_NAME])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
@@ -158,11 +165,16 @@ pub fn is_elevated_task_registered() -> bool {
 }
 
 /// Opt-in registration of the `SmartBlink` ONLOGON highest-privilege scheduled task (`AGENTS.md` #11).
-/// Prompts UAC once via `ShellExecuteW(..., "runas", "schtasks.exe", ...)`.
+/// Prompts UAC once via `ShellExecuteW(..., "runas", "%SystemRoot%\\System32\\schtasks.exe", ...)`.
 pub fn register_elevated_task_interactive(hwnd: HWND) -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
+    let bin_w: Vec<u16> = schtasks_path()
+        .to_string_lossy()
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
     let args = format!(
         "/Create /TN \"{}\" /TR \"\\\"{}\\\"\" /SC ONLOGON /RL HIGHEST /F",
         ELEVATED_TASK_NAME,
@@ -173,7 +185,7 @@ pub fn register_elevated_task_interactive(hwnd: HWND) -> bool {
         ShellExecuteW(
             hwnd,
             w!("runas"),
-            w!("schtasks.exe"),
+            PCWSTR(bin_w.as_ptr()),
             PCWSTR(args_w.as_ptr()),
             None,
             SW_HIDE,
@@ -182,15 +194,20 @@ pub fn register_elevated_task_interactive(hwnd: HWND) -> bool {
     (hinst.0 as isize) > 32
 }
 
-/// Remove the `SmartBlink` scheduled task via `ShellExecuteW(..., "runas", "schtasks.exe", ...)`.
+/// Remove the `SmartBlink` scheduled task via `ShellExecuteW(..., "runas", "%SystemRoot%\\System32\\schtasks.exe", ...)`.
 pub fn unregister_elevated_task_interactive(hwnd: HWND) -> bool {
+    let bin_w: Vec<u16> = schtasks_path()
+        .to_string_lossy()
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
     let args = format!("/Delete /TN \"{}\" /F", ELEVATED_TASK_NAME);
     let args_w: Vec<u16> = args.encode_utf16().chain(std::iter::once(0)).collect();
     let hinst = unsafe {
         ShellExecuteW(
             hwnd,
             w!("runas"),
-            w!("schtasks.exe"),
+            PCWSTR(bin_w.as_ptr()),
             PCWSTR(args_w.as_ptr()),
             None,
             SW_HIDE,

@@ -96,9 +96,33 @@ fn build_profile_bytes(spec: &LangSpec<'_>) -> Vec<u8> {
             let mut indices: Vec<u8> = Vec::with_capacity(raw_word.len() + 2);
             indices.push(0); // start boundary '^'
             for ch in raw_word.chars() {
-                for lc in ch.to_lowercase() {
-                    if let Some(idx) = char_to_idx(lc) {
-                        indices.push(idx);
+                if spec.primary_lang == LANG_TURKISH {
+                    match ch {
+                        'İ' | 'i' => {
+                            if let Some(idx) = char_to_idx('i') {
+                                indices.push(idx);
+                            }
+                        }
+                        'I' | 'ı' => {
+                            if let Some(idx) = char_to_idx('ı') {
+                                indices.push(idx);
+                            }
+                        }
+                        other => {
+                            for lc in other.to_lowercase() {
+                                if lc != '\u{0307}' {
+                                    if let Some(idx) = char_to_idx(lc) {
+                                        indices.push(idx);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    for lc in ch.to_lowercase() {
+                        if let Some(idx) = char_to_idx(lc) {
+                            indices.push(idx);
+                        }
                     }
                 }
             }
@@ -201,7 +225,7 @@ const EN_CORPUS: &[(&str, u32)] = &[
     ("maybe really actually already again never always sometimes usually cool great awesome okay please thanks sorry sure weird strange quiet loud sound volume speaker headphone highlight flash blink", 36),
     ("capslock scrolllock shift control enter space backspace delete escape pause break hotkey shortcut clipboard settings language switch convert select selection active paused running stopped working broken", 34),
     ("i a am is are was were be been being have has had do does did done can could will would shall should may might must my me we us our you your he him his she her it its they them their what which who whom whose where when why how yes no ok okay sure well very much many more most some any all both each few other another such own same so than too just now then here there", 46),
-    ("correctly correct works worked friend friends thinking thought", 40),
+    ("correctly correct works worked friend friends thinking thought dont cant wont isnt arent doesnt didnt im youre hes shes weve theyve thats whats", 40),
 ];
 
 const RU_CORPUS: &[(&str, u32)] = &[
@@ -361,7 +385,7 @@ fn main() {
             script: SCRIPT_HEBREW,
             primary_lang: LANG_HEBREW,
             alphabet: "אבגדהוזחטיךכלםמןנסעףפץצקרשת",
-            vowels: "אהويאע",
+            vowels: "אהויע",
             corpus: corpora::HE_CORPUS,
         },
         LangSpec {

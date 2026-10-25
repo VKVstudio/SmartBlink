@@ -1,6 +1,6 @@
 # Checkpoint — SmartBlink
 
-`Current Phase`: M12 + live audit bugfix pass + Canonical Dark Bento UI & Brand Assets complete (`v1.0.0`, 43/43 unit tests green, release binary & Inno Setup 6 installer rebuilt, `SHA256SUMS.txt` updated).
+`Current Phase`: v1.0.0 Production-Ready — Multi-Persona (8 Roles) + 20-Layout Skeptic Audit, Security/Layout/UX Hardening, & GitHub Release Preparation complete (46/46 unit tests green, release binary & Inno Setup 6 installer rebuilt, `SHA256SUMS.txt` updated).
 `Approved Stack`: Rust (`x86_64-pc-windows-gnullvm` via LLVM-MinGW UCRT; MSVC/Windows SDK forbidden), `windows` crate 0.58, Win32 tray + Settings window, hand-rolled flat TOML config in `%APPDATA%\SmartBlink\config.toml`, WASAPI shared audio, Inno Setup 6 installer (per-user default `{autopf}`, optional elevated ONLOGON scheduled task). License MIT. Publisher `VKV Studio` / vkvstudio.com. Min OS: Windows 10 1809. Default fix hotkey: double Left Shift. Default alert mode: Both (audio + LED), LED defaults to Scroll Lock.
 
 ## Completed
@@ -32,35 +32,21 @@
   - `.github/workflows/release.yml`, `LICENSE`, `README.md`, `README.ru.md`, `CONTRIBUTING.md`, `docs/CONFIG.md`, `docs/PRIVACY.md`, `docs/BUILDING.md`.
 - M12 complete:
   - Bumped version to `1.0.0` in `Cargo.toml` and `assets/version.rc`, added `CHANGELOG.md`, rebuilt `smartblink.exe` (`1.0.0.0`) and `target\installer\SmartBlink-Setup-1.0.0.exe`, and generated `target\installer\SHA256SUMS.txt`.
+- Multi-Persona (8 Roles) & 20-Layout Skeptic Audit + GitHub Release Prep complete:
+  - Audited codebase with 10 `flash` subagents covering 8 roles (Security Auditor, Input-Utility Systems Programmer, Power User, Novice User, Legal/Privacy Auditor, CEO, Marketer, SEO/GEO Optimizer) and all 20 built-in layouts (`EN, RU, UK, BE, KK, DE, FR, ES, PT, IT, TR, PL, NL, SV, CS, EL, HE, AR, HY, KA`).
+  - `tools/profilegen` & `assets/profiles/*.bin` (`61,766` bytes total): fixed Hebrew vowel mask (`ו`/`י` instead of Arabic `و`/`ي`), added Turkish case folding (`İ` -> `i`, `I` -> `ı`, strip `U+0307`), cleaned foreign-script tokens from `DE`/`FR`/`TR`/`EL`/`SV`/`AR`/`BE` corpora, and regenerated all 20 binary profiles.
+  - `src/worker.rs`, `src/layout.rs`, `src/profile.rs`, `src/fix.rs`: added 4-layer `ToUnicodeEx` caching (`base`, `shift`, `altgr`, `shift_altgr`), `AltGr` (`VK_LCONTROL`+`VK_RMENU`) word buffer preservation, 2-key dead-key composition (`combine_dead_key`), Arabic 2-char `لا` ligature support (`ScanTranslation::Chars`), candidate-aware top-row digit/slash immunity (`FR` `"d2j0"`->`"déjà"`, `CS` `"4e3tina"`->`"čeština"`, `KK` `"c2ktv"`->`"сәлем"`, `HY` `"ta8i"`->`"տարի"`, `HE` `"/וקדאןםמ"`->`"question"`, `IT` `"pi\\"`->`"più"`), Georgian unicameral Shift-letter handling (`"dRes"`->`"დღეს"`), active idle timeout, and 10-second reversible fix (undo on second fix gesture).
+  - Security & UX hardening (`src/hooks.rs`, `src/clipboard.rs`, `src/config.rs`, `src/autostart.rs`, `src/settings.rs`, `src/tray.rs`, `src/main.rs`): wired `SUPPRESS_DEPTH` into `low_level_keyboard_proc`, distinguished `Left Alt` from `AltGr` (`VK_RMENU`) in `SelectionHotkeyDetector` so `AltGr+Z` (Polish `ż`) never triggers selection conversion, added `16 MB`/`32 MB` clipboard snapshot caps and volatile RAM zeroing, capped `config.toml` at `64 KB` / `256` blacklist entries with PID-qualified temp file, used explicit `%SystemRoot%\System32\schtasks.exe` & `notepad.exe` paths, fixed `Sel: Ctrl+Alt+Z` hero badge clipping in `src/settings.rs`, and added second-instance `WM_APP_OPEN_SETTINGS` activation.
+  - Embedded `SmartBlink_preview.png`, comparison table, and FAQ in `README.md` & `README.ru.md`, updated `Cargo.toml`, `CHANGELOG.md`, `installer/SmartBlink.iss`, `.github/workflows/release.yml`, and `.gitignore`.
 
 ## Verified
-- `cargo build --release`: 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe` (`ProductVersion == 1.0.0.0`).
-- `cargo test --release`: `test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s`.
-- `ISCC.exe installer\SmartBlink.iss`: `Successful compile` -> `target\installer\SmartBlink-Setup-1.0.0.exe`.
-- `target\installer\SHA256SUMS.txt` generated for both `smartblink.exe` and `SmartBlink-Setup-1.0.0.exe`.
+- `cargo build --release`: 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe` (`612,352` bytes, `SHA256 = 5866e2d5ce306855b5cc3a2ff4931b8d5c430dff1544a9f6921e564e378430f6`).
+- `cargo test --release`: `test result: ok. 46 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s`.
+- `ISCC.exe installer\SmartBlink.iss`: `Successful compile` -> `target\installer\SmartBlink-Setup-1.0.0.exe` (`2,327,059` bytes, `SHA256 = acfbb1a7d3230ad6d9e298951b2a9cd3be77b834004a65280e9573050d05ca76`).
+- `target\installer\SHA256SUMS.txt` updated for both `smartblink.exe` and `SmartBlink-Setup-1.0.0.exe`.
 
 ## Next Immediate Task
-**PRIORITY TASK (for next session):**
-1. **Multi-Persona & Per-Layout/Country Skeptic Audit (using `flash` subagents):**
-   - Launch a full panel of `flash` subagents covering:
-     - **Role/Persona Skeptics (8+):**
-       1. **Top-Tier Security & Threat-Model Auditor:** audit `WH_KEYBOARD_LL` / `WH_MOUSE_LL`, RAM zeroing (`ptr::write_volatile`), UIPI / privilege boundaries, scheduled task (`schtasks`), registry autostart, clipboard snapshot/restore, config parser (`%APPDATA%\SmartBlink\config.toml`), and supply-chain/binary surface for any memory leak, keystroke leak, race condition, injection, or crash vector.
-       2. **Competitor / Input-Utility Systems Programmer (Punto Switcher / Caramba / KeySwitcher veteran):** audit scan-code mapping, `ToUnicodeEx` dead-key/AltGr states, multi-word burst boundaries, homograph bridging, backspace/cursor tracking, and terminal/IDE/game edge cases.
-       3. **Everyday Power User:** audit typing feel, false positives/negatives, hotkey responsiveness, audio/LED alert ergonomics, and clipboard selection conversion (`Ctrl+Alt+Z`).
-       4. **Non-Technical / "Grandmother" Novice User:** audit foolproof onboarding, accidental key mashing, clear recovery when confused, and zero-surprise behavior.
-       5. **Legal & Privacy Compliance Auditor (GDPR / CCPA / MIT / Windows Store & SmartScreen):** verify zero telemetry, license headers, third-party notices, privacy guarantees, and installer disclosures.
-       6. **Product Director / CEO:** audit product positioning, reliability invariants, installer polish, and release readiness.
-       7. **Marketer:** audit value proposition, README/landing messaging, screenshots/diagrams, and user conversion flow.
-       8. **SEO / GEO Optimizer:** audit GitHub repository metadata, `README.md` / `README.ru.md`, structured keywords, AI-search (ChatGPT/Perplexity/Gemini/Google) discoverability, and release notes.
-     - **Per-Layout & Country/Culture Skeptics (all 20 built-in layouts/countries on `flash`):**
-       - Audit `EN`, `RU`, `UK`, `BE`, `KK`, `DE` (QWERTZ + dead keys/Umlauts), `FR` (AZERTY + number row Shift + dead keys), `ES`, `PT`, `IT`, `TR` (dotted/dotless `i`/`ı`), `PL` (`AltGr` / right-Alt diacritics!), `NL`, `SV`, `CS` (háček/čárka dead keys), `EL` (Greek `;` question mark + tonos), `HE` (RTL + final letter forms), `AR` (RTL + connected forms), `HY` (Armenian punctuation), `KA` (Georgian Shift layers).
-       - Check country-specific keyboard habits (`AltGr` = `Ctrl+Alt` on European keyboards vs `WordBuffer` chord reset!), national punctuation keys, and whether per-country/layout UX or hotkey/button options are needed.
-2. **Fix & Verify:**
-   - Implement fixes for all discovered vulnerabilities, layout/AltGr/dead-key/RTL bugs, UX gaps, and docs/SEO/GEO improvements.
-   - Verify with `cargo test --release`, `cargo build --release`, and `ISCC.exe installer\SmartBlink.iss`.
-3. **Prepare for GitHub Upload:**
-   - Embed and showcase `SmartBlink_preview.png` (located at `C:\projects\SmartBlink\SmartBlink_preview.png`, showing the Dark Bento Settings window + Tray Flyout) in `README.md` and `README.ru.md` (and fix the minor text clip on `Selection: Ctrl+Alt+Z` in the top-left hero badge of `src/settings.rs`).
-   - Ensure working tree, commits, `README.md`, `README.ru.md`, `CHANGELOG.md`, `LICENSE`, CI workflows, and `SHA256SUMS.txt` are 100% clean and ready for GitHub push/release (do NOT push without explicit owner command).
+- Await owner's explicit approval/command if and when to push to a GitHub remote or publish a GitHub release (`AGENTS.md` Session Protocol #7).
 
 ## Blockers
 - None. (`iscc` for Inno Setup 6 needed only at M10.)

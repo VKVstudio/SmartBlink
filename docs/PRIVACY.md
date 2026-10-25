@@ -3,7 +3,7 @@
 SmartBlink is engineered with **Privacy by Design**:
 
 1. **100% RAM-Only Keystroke Processing**
-   - Keystrokes are captured as physical scan codes in a fixed 256-slot lock-free SPSC ring buffer and a 64-slot active word buffer.
+   - Keystrokes are captured as physical scan codes in a fixed 256-slot lock-free SPSC ring buffer and a 256-slot active word buffer.
    - Every slot is overwritten with zeros via `std::ptr::write_volatile` as soon as it is consumed, reset, or dropped.
    - The "stubborn user" session whitelist stores only 64-bit hashes in a fixed 256-entry RAM array (also volatile-zeroed on exit), never plaintext words.
    - **Zero disk logging:** SmartBlink never writes typed characters, words, or clipboard contents to disk.
@@ -18,7 +18,7 @@ SmartBlink is engineered with **Privacy by Design**:
    - Terminals, IDEs, and user-excluded processes in `blacklist` are bypassed via a per-`HWND` focus cache.
 
 4. **Clipboard Preservation**
-   - During explicit `Ctrl+Alt+Z` selection conversion, all `HGLOBAL` clipboard formats are snapshotted in memory, restored byte-for-byte in original order immediately afterward (including on error paths), and volatile-zeroed on drop.
+   - During explicit `Ctrl+Alt+Z` selection conversion, all `HGLOBAL` clipboard formats (bounded to 16 MB per format / 32 MB total) are snapshotted in memory, restored byte-for-byte in original order immediately afterward (including on error paths), and volatile-zeroed on drop.
 
 5. **Least Privilege (`asInvoker`)**
    - SmartBlink ships with an `asInvoker` application manifest and runs as a standard user by default.

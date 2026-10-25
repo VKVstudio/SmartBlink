@@ -253,40 +253,78 @@ pub fn plan_word_fix(
 }
 
 /// Render `run` into `target_table` while preserving trailing `?` (`Shift+7`), `:` (`Shift+6`),
-/// and `;` (`Shift+4`) when typed in Russian layout at the end of a word (so `акшутв?` and
-/// `сщккуседн?` convert to `friend?` and `correctly?` instead of `friend&` and `correctly&`).
+/// `;` (`Shift+4`), `.` (`/`), and `,` (`Shift+/`) when typed in Russian layout at the end of a word
+/// (so `акшутв?`, `ш ерштл,`, and `руддщ.` convert to `friend?`, `i think,`, and `hello.`).
 fn render_replacement_preserving_top_row_punct(
     run: &[KeyStrokeSlot],
     current_table: &LayoutLayerTable,
     target_table: &LayoutLayerTable,
 ) -> Option<String> {
     let mut out = String::with_capacity(run.len());
+    let mut pending_dead: Option<char> = None;
+
     for (idx, slot) in run.iter().enumerate() {
         if slot.vk == VK_SPACE {
-            out.push(' ');
+            if let Some(d) = pending_dead.take() {
+                out.push(d);
+            } else {
+                out.push(' ');
+            }
             continue;
         }
         let cur_ch = match current_table.lookup(slot) {
             layout::ScanTranslation::Char(c) => Some(c),
-            layout::ScanTranslation::DeadKey => return None,
+            layout::ScanTranslation::Chars(c1, _) => Some(c1),
+            layout::ScanTranslation::DeadKey(_) => None,
             layout::ScanTranslation::None => None,
         };
-        let dst_ch = match target_table.lookup(slot) {
-            layout::ScanTranslation::Char(c) => c,
-            layout::ScanTranslation::DeadKey => return None,
-            layout::ScanTranslation::None => continue,
-        };
-        let at_word_end = idx > 0 && (idx + 1 == run.len() || run[idx + 1].vk == VK_SPACE);
-        let mapped = if let Some(c_ch) = cur_ch {
-            if at_word_end && matches!((c_ch, dst_ch), ('?', '&') | (':', '^') | (';', '$')) {
-                c_ch
-            } else {
-                dst_ch
+        match target_table.lookup(slot) {
+            layout::ScanTranslation::Char(dst_ch) => {
+                if let Some(d) = pending_dead.take() {
+                    if let Some(combined) = layout::combine_dead_key(d, dst_ch) {
+                        out.push(combined);
+                    } else {
+                        out.push(d);
+                        out.push(dst_ch);
+                    }
+                    continue;
+                }
+                let at_word_end = idx > 0 && (idx + 1 == run.len() || run[idx + 1].vk == VK_SPACE);
+                let mapped = if let Some(c_ch) = cur_ch {
+                    if at_word_end
+                        && matches!(
+                            (c_ch, dst_ch),
+                            ('?', '&') | (':', '^') | (';', '$') | ('.', '/') | (',', '?')
+                        )
+                    {
+                        c_ch
+                    } else {
+                        dst_ch
+                    }
+                } else {
+                    dst_ch
+                };
+                out.push(mapped);
             }
-        } else {
-            dst_ch
-        };
-        out.push(mapped);
+            layout::ScanTranslation::Chars(c1, c2) => {
+                if let Some(d) = pending_dead.take() {
+                    out.push(d);
+                }
+                out.push(c1);
+                out.push(c2);
+            }
+            layout::ScanTranslation::DeadKey(d) => {
+                if let Some(prev_d) = pending_dead.take() {
+                    out.push(prev_d);
+                } else {
+                    pending_dead = Some(d);
+                }
+            }
+            layout::ScanTranslation::None => {}
+        }
+    }
+    if pending_dead.is_some() {
+        return None;
     }
     Some(out)
 }
@@ -668,13 +706,13 @@ mod tests {
 
         // "Ghbdtn " (6 letters + 1 trailing space = 7 chars):
         let trace = [
-            KeyStrokeSlot { vk: 0x47, scan_code: 0x22, flags: 0, ms_tick: 10, shift: true },
-            KeyStrokeSlot { vk: 0x48, scan_code: 0x23, flags: 0, ms_tick: 20, shift: false },
-            KeyStrokeSlot { vk: 0x42, scan_code: 0x30, flags: 0, ms_tick: 30, shift: false },
-            KeyStrokeSlot { vk: 0x44, scan_code: 0x20, flags: 0, ms_tick: 40, shift: false },
-            KeyStrokeSlot { vk: 0x54, scan_code: 0x14, flags: 0, ms_tick: 50, shift: false },
-            KeyStrokeSlot { vk: 0x4E, scan_code: 0x31, flags: 0, ms_tick: 60, shift: false },
-            KeyStrokeSlot { vk: VK_SPACE, scan_code: 0x39, flags: 0, ms_tick: 70, shift: false },
+            KeyStrokeSlot { vk: 0x47, scan_code: 0x22, flags: 0, ms_tick: 10, shift: true, altgr: false },
+            KeyStrokeSlot { vk: 0x48, scan_code: 0x23, flags: 0, ms_tick: 20, shift: false, altgr: false },
+            KeyStrokeSlot { vk: 0x42, scan_code: 0x30, flags: 0, ms_tick: 30, shift: false, altgr: false },
+            KeyStrokeSlot { vk: 0x44, scan_code: 0x20, flags: 0, ms_tick: 40, shift: false, altgr: false },
+            KeyStrokeSlot { vk: 0x54, scan_code: 0x14, flags: 0, ms_tick: 50, shift: false, altgr: false },
+            KeyStrokeSlot { vk: 0x4E, scan_code: 0x31, flags: 0, ms_tick: 60, shift: false, altgr: false },
+            KeyStrokeSlot { vk: VK_SPACE, scan_code: 0x39, flags: 0, ms_tick: 70, shift: false, altgr: false },
         ];
 
         let plan = plan_word_fix(&trace, US_HKL, &tables).expect("FixPlan must be produced");
@@ -783,6 +821,7 @@ mod tests {
                             flags: 0,
                             ms_tick: (i as u32) * 30,
                             shift: false,
+                            altgr: false,
                         }
                     } else {
                         let (sc, shift) = pairs
@@ -803,6 +842,7 @@ mod tests {
                             flags: 0,
                             ms_tick: (i as u32) * 30,
                             shift,
+                            altgr: false,
                         }
                     }
                 })
@@ -846,7 +886,7 @@ mod tests {
             "как то все равно ебаненько работает"
         );
 
-        // 6. Full 11-word RU->EN sentence with Russian `?` (Shift+7) on `акшутв?` and `сщккуседн?`:
+        // 6. Full 11-word RU->EN sentence with Russian `?` (Shift+7) on `акшутв?` and `,` (Shift+/) on `ерштл,`:
         let burst6 = type_str(
             "рщц фку нщг ьн акшутв? ш ерштл, црфе ше цщкл сщккуседн?",
             FULL_RU,
@@ -854,7 +894,7 @@ mod tests {
         let plan6 = plan_word_fix(&burst6, RU_HKL, &tables).expect("plan6");
         assert_eq!(
             plan6.replacement_text,
-            "how are you my friend? i think? what it work correctly?"
+            "how are you my friend? i think, what it work correctly?"
         );
     }
 }

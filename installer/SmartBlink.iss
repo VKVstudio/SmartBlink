@@ -18,6 +18,8 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
+AppCopyright=Copyright (c) 2026 VKV Studio
+LicenseFile=..\LICENSE
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
@@ -48,6 +50,7 @@ Name: "elevatedtask"; Description: "Register elevated logon scheduled task (work
 [Files]
 Source: "..\target\x86_64-pc-windows-gnullvm\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\profiles\LICENSES.md"; DestDir: "{app}\licenses"; Flags: ignoreversion
 
 [Icons]

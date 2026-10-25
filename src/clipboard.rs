@@ -42,6 +42,9 @@ const CF_GDIOBJLAST: u32 = 0x03FF;
 
 const MAX_WHITELIST_ENTRIES: usize = 256;
 pub const WHITELIST_MIN_IGNORES: u8 = 3;
+const MAX_CLIPBOARD_FORMAT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_CLIPBOARD_TOTAL_BYTES: usize = 32 * 1024 * 1024;
+const LLKHF_EXTENDED_FLAG: u32 = 0x01;
 
 const VK_SHIFT: u16 = 0x10;
 const VK_CONTROL: u16 = 0x11;
@@ -217,10 +220,12 @@ pub struct ClipboardSnapshot {
 }
 
 impl ClipboardSnapshot {
-    /// Open clipboard and capture all HGLOBAL-backed formats byte-for-byte in enumeration order.
+    /// Open clipboard and capture all HGLOBAL-backed formats byte-for-byte in enumeration order
+    /// (bounded to 16 MB per format / 32 MB total to prevent OOM on huge bitmaps/videos).
     pub fn capture() -> windows::core::Result<Self> {
         open_clipboard_with_retry()?;
         let mut formats = Vec::new();
+        let mut total_bytes = 0usize;
         unsafe {
             let mut fmt = EnumClipboardFormats(0);
             while fmt != 0 {
@@ -229,12 +234,16 @@ impl ClipboardSnapshot {
                         if !handle.0.is_null() {
                             let hglobal = HGLOBAL(handle.0);
                             let size = GlobalSize(hglobal);
-                            if size > 0 {
+                            if size > 0
+                                && size <= MAX_CLIPBOARD_FORMAT_BYTES
+                                && total_bytes.saturating_add(size) <= MAX_CLIPBOARD_TOTAL_BYTES
+                            {
                                 let ptr = GlobalLock(hglobal) as *const u8;
                                 if !ptr.is_null() {
                                     let mut data = vec![0u8; size];
                                     ptr::copy_nonoverlapping(ptr, data.as_mut_ptr(), size);
                                     let _ = GlobalUnlock(hglobal);
+                                    total_bytes += size;
                                     formats.push(SavedClipboardFormat {
                                         format: fmt,
                                         bytes: data,
@@ -335,15 +344,17 @@ pub fn read_clipboard_unicode_text() -> windows::core::Result<Option<String>> {
             if !handle.0.is_null() {
                 let hglobal = HGLOBAL(handle.0);
                 let byte_size = GlobalSize(hglobal);
-                let ptr = GlobalLock(hglobal) as *const u16;
-                if !ptr.is_null() && byte_size >= 2 {
-                    let max_units = byte_size / 2;
-                    let slice = std::slice::from_raw_parts(ptr, max_units);
-                    let nul_pos = slice.iter().position(|&u| u == 0).unwrap_or(max_units);
-                    let text = String::from_utf16_lossy(&slice[..nul_pos]);
-                    let _ = GlobalUnlock(hglobal);
-                    if !text.is_empty() {
-                        out = Some(text);
+                if byte_size >= 2 && byte_size <= MAX_CLIPBOARD_FORMAT_BYTES {
+                    let ptr = GlobalLock(hglobal) as *const u16;
+                    if !ptr.is_null() {
+                        let max_units = byte_size / 2;
+                        let slice = std::slice::from_raw_parts(ptr, max_units);
+                        let nul_pos = slice.iter().position(|&u| u == 0).unwrap_or(max_units);
+                        let text = String::from_utf16_lossy(&slice[..nul_pos]);
+                        let _ = GlobalUnlock(hglobal);
+                        if !text.is_empty() {
+                            out = Some(text);
+                        }
                     }
                 }
             }
@@ -351,6 +362,14 @@ pub fn read_clipboard_unicode_text() -> windows::core::Result<Option<String>> {
         let _ = CloseClipboard();
     }
     Ok(out)
+}
+
+fn zero_string_in_ram(mut s: String) {
+    unsafe {
+        for b in s.as_bytes_mut() {
+            ptr::write_volatile(b, 0);
+        }
+    }
 }
 
 /// Convert `text` across candidate `LayoutLayerTable` pairs using reverse scan-code lookup + profile scoring.
@@ -385,7 +404,7 @@ pub fn convert_selection_text(
                 // (e.g. mixed selection "Привет ghbdtn"), never when they belong to a 3rd layout like DE "größe".
                 let all_unmapped_in_dst = text.chars().all(|ch| {
                     !ch.is_alphabetic()
-                        || src.find_char(ch).is_some()
+                        || src.find_char_ext(ch).is_some()
                         || ch
                             .to_lowercase()
                             .all(|lc| dst_profile.char_index(lc).is_some())
@@ -459,9 +478,11 @@ fn score_phrase(text: &str, prof: &profile::LanguageProfile) -> i32 {
 }
 
 /// Detector for the `Ctrl+Alt+Z` selection conversion hotkey (`ARCHITECTURE.md` §3.6).
+/// Distinguishes Left Alt from Right Alt (`AltGr`) so `AltGr+Z` (Polish `ż`!) never triggers selection conversion.
 pub struct SelectionHotkeyDetector {
     ctrl_down: bool,
-    alt_down: bool,
+    lalt_down: bool,
+    ralt_down: bool,
     shift_down: bool,
     win_down: bool,
     z_held: bool,
@@ -477,7 +498,8 @@ impl SelectionHotkeyDetector {
     pub const fn new() -> Self {
         Self {
             ctrl_down: false,
-            alt_down: false,
+            lalt_down: false,
+            ralt_down: false,
             shift_down: false,
             win_down: false,
             z_held: false,
@@ -486,20 +508,29 @@ impl SelectionHotkeyDetector {
 
     pub fn reset(&mut self) {
         self.ctrl_down = false;
-        self.alt_down = false;
+        self.lalt_down = false;
+        self.ralt_down = false;
         self.shift_down = false;
         self.win_down = false;
         self.z_held = false;
     }
 
-    /// Feed one `InputRecord`; returns `true` when `Ctrl+Alt+Z` is pressed cleanly.
+    /// Feed one `InputRecord`; returns `true` when `Ctrl+LeftAlt+Z` is pressed cleanly.
     pub fn feed(&mut self, rec: InputRecord) -> bool {
         match rec.kind {
             InputKind::Empty | InputKind::MouseClick => false,
             InputKind::KeyUp => {
                 match rec.vk {
                     VK_CONTROL | VK_LCONTROL | VK_RCONTROL => self.ctrl_down = false,
-                    VK_MENU | VK_LMENU | VK_RMENU => self.alt_down = false,
+                    VK_LMENU => self.lalt_down = false,
+                    VK_RMENU => self.ralt_down = false,
+                    VK_MENU => {
+                        if (rec.flags & LLKHF_EXTENDED_FLAG) != 0 {
+                            self.ralt_down = false;
+                        } else {
+                            self.lalt_down = false;
+                        }
+                    }
                     VK_SHIFT | VK_LSHIFT | VK_RSHIFT => self.shift_down = false,
                     VK_LWIN | VK_RWIN => self.win_down = false,
                     VK_Z => self.z_held = false,
@@ -513,8 +544,20 @@ impl SelectionHotkeyDetector {
                         self.ctrl_down = true;
                         false
                     }
-                    VK_MENU | VK_LMENU | VK_RMENU => {
-                        self.alt_down = true;
+                    VK_LMENU => {
+                        self.lalt_down = true;
+                        false
+                    }
+                    VK_RMENU => {
+                        self.ralt_down = true;
+                        false
+                    }
+                    VK_MENU => {
+                        if (rec.flags & LLKHF_EXTENDED_FLAG) != 0 {
+                            self.ralt_down = true;
+                        } else {
+                            self.lalt_down = true;
+                        }
                         false
                     }
                     VK_SHIFT | VK_LSHIFT | VK_RSHIFT => {
@@ -527,7 +570,8 @@ impl SelectionHotkeyDetector {
                     }
                     VK_Z => {
                         if self.ctrl_down
-                            && self.alt_down
+                            && self.lalt_down
+                            && !self.ralt_down
                             && !self.shift_down
                             && !self.win_down
                             && !self.z_held
@@ -603,15 +647,19 @@ pub fn convert_selection_in_window(
     let Some((converted_text, target_hkl)) =
         convert_selection_text(&selected_text, current_hkl, &tables)
     else {
+        zero_string_in_ram(selected_text);
         return Ok(false);
     };
+    zero_string_in_ram(selected_text);
 
     // Normalize CRLF -> LF so KEYEVENTF_UNICODE does not inject duplicate Enter strokes on multiline text.
     let normalized_text = converted_text.replace("\r\n", "\n");
+    zero_string_in_ram(converted_text);
 
     // 4. Release any held Ctrl/Alt/Shift modifiers and replace active selection via KEYEVENTF_UNICODE.
     let mut inputs = fix::build_modifier_up_inputs();
     inputs.extend(fix::build_unicode_inputs(&normalized_text));
+    zero_string_in_ram(normalized_text);
     hooks::begin_suppression();
     let send_res = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
     hooks::end_suppression();
@@ -810,8 +858,14 @@ mod tests {
         assert!(!det.feed(kd(VK_Z))); // Ctrl+Z alone must not trigger
         assert!(!det.feed(ku(VK_Z)));
 
+        // AltGr+Z (VK_LCONTROL + VK_RMENU + VK_Z, Polish 'ż') must NEVER trigger selection conversion!
+        assert!(!det.feed(kd(VK_RMENU)));
+        assert!(!det.feed(kd(VK_Z)));
+        assert!(!det.feed(ku(VK_Z)));
+        assert!(!det.feed(ku(VK_RMENU)));
+
         assert!(!det.feed(kd(VK_LMENU)));
-        assert!(det.feed(kd(VK_Z))); // Ctrl+Alt+Z triggers!
+        assert!(det.feed(kd(VK_Z))); // Ctrl+LeftAlt+Z triggers!
         assert!(!det.feed(kd(VK_Z))); // Auto-repeat ignored while Z is held
         assert!(!det.feed(ku(VK_Z)));
         assert!(!det.feed(ku(VK_LMENU)));

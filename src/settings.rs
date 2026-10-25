@@ -862,17 +862,23 @@ unsafe fn execute_hit_action(hwnd: HWND, action: HitAction, is_flyout: bool) {
             if is_flyout {
                 let _ = ShowWindow(hwnd, SW_HIDE);
             }
-            let path = config::config_path();
-            let path_w: Vec<u16> = path
+            let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+            let notepad = std::path::PathBuf::from(root)
+                .join("System32")
+                .join("notepad.exe");
+            let notepad_w: Vec<u16> = notepad
                 .to_string_lossy()
                 .encode_utf16()
                 .chain(std::iter::once(0))
                 .collect();
+            let path = config::config_path();
+            let arg = format!("\"{}\"", path.display());
+            let arg_w: Vec<u16> = arg.encode_utf16().chain(std::iter::once(0)).collect();
             let _ = ShellExecuteW(
                 hwnd,
                 w!("open"),
-                PCWSTR(path_w.as_ptr()),
-                None,
+                PCWSTR(notepad_w.as_ptr()),
+                PCWSTR(arg_w.as_ptr()),
                 None,
                 SW_SHOWNORMAL,
             );
@@ -1758,8 +1764,8 @@ unsafe fn paint_settings_window(hwnd: HWND) {
             hdc,
             f.mono,
             COL_SLATE,
-            srect(152, 122, 330, 22, s),
-            "20 Languages  ·  <0.1 ms Hook  ·  Selection: Ctrl+Alt+Z",
+            srect(152, 122, 340, 22, s),
+            "20 Languages · <0.1 ms Hook · Sel: Ctrl+Alt+Z",
             DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0,
         );
 

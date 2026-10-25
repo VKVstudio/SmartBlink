@@ -23,7 +23,8 @@ fn main() {
     let _instance = match single_instance::acquire() {
         Some(guard) => guard,
         None => {
-            // Another instance owns the mutex: exit quietly before touching config.
+            // Another instance owns the mutex: ask it to open Settings so the user gets visual feedback, then exit.
+            tray::notify_existing_instance_open_settings();
             return;
         }
     };

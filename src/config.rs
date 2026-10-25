@@ -9,6 +9,9 @@ use std::sync::{Mutex, OnceLock};
 
 pub const APP_DIR_NAME: &str = "SmartBlink";
 pub const CONFIG_FILE_NAME: &str = "config.toml";
+const MAX_CONFIG_FILE_BYTES: u64 = 64 * 1024;
+const MAX_BLACKLIST_ENTRIES: usize = 256;
+const MAX_BLACKLIST_ITEM_LEN: usize = 128;
 
 static RUNTIME_CONFIG: OnceLock<Mutex<Config>> = OnceLock::new();
 static CONFIG_REV: AtomicU64 = AtomicU64::new(1);
@@ -267,6 +270,9 @@ fn parse_string_array(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut chars = inner.chars().peekable();
     while let Some(c) = chars.next() {
+        if out.len() >= MAX_BLACKLIST_ENTRIES {
+            break;
+        }
         if c.is_whitespace() || c == ',' {
             continue;
         }
@@ -275,11 +281,13 @@ fn parse_string_array(s: &str) -> Vec<String> {
             while let Some(ch) = chars.next() {
                 if ch == '\\' {
                     if let Some(esc) = chars.next() {
-                        item.push(esc);
+                        if item.len() < MAX_BLACKLIST_ITEM_LEN {
+                            item.push(esc);
+                        }
                     }
                 } else if ch == '"' {
                     break;
-                } else {
+                } else if item.len() < MAX_BLACKLIST_ITEM_LEN {
                     item.push(ch);
                 }
             }
@@ -290,7 +298,9 @@ fn parse_string_array(s: &str) -> Vec<String> {
                 if ch == ',' {
                     break;
                 }
-                item.push(ch);
+                if item.len() < MAX_BLACKLIST_ITEM_LEN {
+                    item.push(ch);
+                }
                 chars.next();
             }
             let trimmed = item.trim();
@@ -302,9 +312,14 @@ fn parse_string_array(s: &str) -> Vec<String> {
     out
 }
 
-/// Load config; create with defaults on first run. Corrupt file -> defaults (never crash).
+/// Load config; create with defaults on first run. Corrupt or oversized file -> defaults (never crash).
 pub fn load_or_create() -> Config {
     let path = config_path();
+    if let Ok(meta) = fs::metadata(&path) {
+        if meta.len() > MAX_CONFIG_FILE_BYTES {
+            return Config::default();
+        }
+    }
     match fs::read_to_string(&path) {
         Ok(text) => from_toml(&text),
         Err(_) => {
@@ -316,17 +331,21 @@ pub fn load_or_create() -> Config {
     }
 }
 
-/// Atomic rewrite: temp file in same dir, sync_all, rename over target.
+/// Atomic rewrite: PID-qualified temp file in same dir, sync_all, rename over target.
 pub fn save(cfg: &Config) -> std::io::Result<()> {
     let dir = app_dir();
     fs::create_dir_all(&dir)?;
     let path = config_path();
-    let tmp = dir.join(format!("{CONFIG_FILE_NAME}.tmp"));
+    let tmp = dir.join(format!("{CONFIG_FILE_NAME}.{}.tmp", std::process::id()));
     let mut f = fs::File::create(&tmp)?;
     f.write_all(to_toml(cfg).as_bytes())?;
     f.sync_all()?;
     drop(f);
-    fs::rename(&tmp, &path)
+    let res = fs::rename(&tmp, &path);
+    if res.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    res
 }
 
 #[cfg(test)]

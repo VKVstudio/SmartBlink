@@ -14,13 +14,25 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, FindWindowW, GetMessageW,
-    GetSystemMetrics, LoadIconW, LoadImageW, PostQuitMessage, RegisterClassW,
+    GetSystemMetrics, LoadIconW, LoadImageW, PostMessageW, PostQuitMessage, RegisterClassW,
     RegisterWindowMessageW, ShowWindow, TranslateMessage, HICON, IDI_APPLICATION, IMAGE_ICON,
     LR_DEFAULTCOLOR, MSG, SM_CXSMICON, SM_CYSMICON, SW_HIDE, WM_APP, WM_CLOSE, WM_DESTROY,
     WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_RBUTTONUP, WNDCLASSW,
 };
 
 pub const WM_TRAY: u32 = WM_APP + 1;
+pub const WM_APP_OPEN_SETTINGS: u32 = WM_APP + 42;
+
+/// Notify an already-running SmartBlink instance to open its Settings window.
+pub fn notify_existing_instance_open_settings() {
+    unsafe {
+        if let Ok(hwnd) = FindWindowW(w!("SmartBlinkTrayWnd"), None) {
+            if !hwnd.0.is_null() {
+                let _ = PostMessageW(hwnd, WM_APP_OPEN_SETTINGS, WPARAM(0), LPARAM(0));
+            }
+        }
+    }
+}
 
 const ICON_UID: u32 = 1;
 const IDI_MAIN: usize = 101; // MAKEINTRESOURCE(101)
@@ -175,6 +187,10 @@ unsafe extern "system" fn wnd_proc(
             } else if mouse == WM_RBUTTONUP {
                 settings::show_tray_flyout(hwnd);
             }
+            LRESULT(0)
+        }
+        m if m == WM_APP_OPEN_SETTINGS => {
+            settings::show_settings_window();
             LRESULT(0)
         }
         WM_CLOSE => {

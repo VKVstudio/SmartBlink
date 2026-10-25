@@ -39,13 +39,11 @@ pub fn toggle_paused() -> bool {
     next
 }
 
-#[allow(dead_code)]
 #[inline]
 pub fn begin_suppression() {
     SUPPRESS_DEPTH.fetch_add(1, Ordering::AcqRel);
 }
 
-#[allow(dead_code)]
 #[inline]
 pub fn end_suppression() {
     SUPPRESS_DEPTH.fetch_sub(1, Ordering::AcqRel);
@@ -80,18 +78,21 @@ unsafe extern "system" fn low_level_keyboard_proc(
                 _ => InputKind::Empty,
             };
             if kind != InputKind::Empty {
-                if kind == InputKind::KeyDown {
+                let vk = kb.vkCode as u16;
+                if kind == InputKind::KeyDown && vk != 0x91 && vk != 0x14 && vk != 0x08 && vk != 0 {
                     REAL_KEY_SEQ.fetch_add(1, Ordering::Release);
                     LAST_REAL_KEY_TICK.store(kb.time, Ordering::Release);
                 }
-                let _ = global_ring().push(InputRecord {
-                    vk: kb.vkCode as u16,
-                    scan_code: kb.scanCode as u16,
-                    flags: kb.flags.0,
-                    ms_tick: kb.time,
-                    kind,
-                    _pad: [0; 3],
-                });
+                if SUPPRESS_DEPTH.load(Ordering::Acquire) == 0 {
+                    let _ = global_ring().push(InputRecord {
+                        vk,
+                        scan_code: kb.scanCode as u16,
+                        flags: kb.flags.0,
+                        ms_tick: kb.time,
+                        kind,
+                        _pad: [0; 3],
+                    });
+                }
             }
         }
     }
