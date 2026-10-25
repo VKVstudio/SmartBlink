@@ -440,7 +440,7 @@ mod tests {
         assert!(is_immune_token("https://example.com"));
         assert!(is_immune_token("http://localhost"));
         assert!(is_immune_token("www.google.com"));
-        assert!(is_immune_token(r"C:\projects\SmartPunto"));
+        assert!(is_immune_token(r"C:\projects\SmartBlink"));
         assert!(is_immune_token("--release"));
         assert!(is_immune_token("/usr/bin"));
         assert!(!is_immune_token("ghbdtn"));

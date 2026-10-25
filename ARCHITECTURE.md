@@ -1,7 +1,5 @@
 # SmartBlink Architecture
 
-> Renamed from SmartPunto on 2026-10-23 (trademark distance from "Punto Switcher").
-
 Product: Windows tray utility that detects text typed in the wrong keyboard layout (user looks at keyboard, not screen), signals via Caps/Scroll LED blink + muted low-frequency click, and fixes only on explicit user gesture.
 
 Status: Phase 0 design. No application code yet. This file is the single source of truth for architecture; `AGENTS.md` holds process rules.

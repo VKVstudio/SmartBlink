@@ -4,7 +4,7 @@
 `Approved Stack`: Rust (`x86_64-pc-windows-gnullvm` via LLVM-MinGW UCRT; MSVC/Windows SDK forbidden), `windows` crate 0.58, Win32 tray + Settings window, hand-rolled flat TOML config in `%APPDATA%\SmartBlink\config.toml`, WASAPI shared audio, Inno Setup 6 installer (per-user default `{autopf}`, optional elevated ONLOGON scheduled task). License MIT. Publisher `VKV Studio` / vkvstudio.com. Min OS: Windows 10 1809. Default fix hotkey: double Left Shift. Default alert mode: Both (audio + LED), LED defaults to Scroll Lock.
 
 ## Completed
-- Phase 0 docs + rename to **SmartBlink** (`ARCHITECTURE.md`, `AGENTS.md`). Repo folder stays `C:\projects\SmartPunto`.
+- Phase 0 docs + rename to **SmartBlink** (`ARCHITECTURE.md`, `AGENTS.md`). Canonical repo folder: `C:\projects\SmartBlink`.
 - Toolchain: `stable-x86_64-pc-windows-gnullvm` (rustc 1.99.1), linker & `SMARTBLINK_WINDRES` in `C:\Users\user\.cargo\config.toml`.
 - M1 complete (`cef2ab9`): single instance mutex, embedded icon/manifest/version info via `build.rs` + `windres`, config read/write, tray icon + `Exit`, confirmed on desktop by owner.
 - M2 complete (`93cc3b4`): `WH_KEYBOARD_LL` + `WH_MOUSE_LL` dedicated hook thread, lock-free 256-slot SPSC ring buffer (volatile-zeroed on pop/reset), foreground `HWND`-cached process immunity, 30 Hz worker thread + 64-slot `WordBuffer` (volatile-zeroed on reset/drop), tray `Pause` / `Resume` toggle.
@@ -59,7 +59,7 @@
    - Implement fixes for all discovered vulnerabilities, layout/AltGr/dead-key/RTL bugs, UX gaps, and docs/SEO/GEO improvements.
    - Verify with `cargo test --release`, `cargo build --release`, and `ISCC.exe installer\SmartBlink.iss`.
 3. **Prepare for GitHub Upload:**
-   - Embed and showcase `SmartBlink_preview.png` (located at `C:\projects\SmartPunto\SmartBlink_preview.png`, showing the Dark Bento Settings window + Tray Flyout) in `README.md` and `README.ru.md` (and fix the minor text clip on `Selection: Ctrl+Alt+Z` in the top-left hero badge of `src/settings.rs`).
+   - Embed and showcase `SmartBlink_preview.png` (located at `C:\projects\SmartBlink\SmartBlink_preview.png`, showing the Dark Bento Settings window + Tray Flyout) in `README.md` and `README.ru.md` (and fix the minor text clip on `Selection: Ctrl+Alt+Z` in the top-left hero badge of `src/settings.rs`).
    - Ensure working tree, commits, `README.md`, `README.ru.md`, `CHANGELOG.md`, `LICENSE`, CI workflows, and `SHA256SUMS.txt` are 100% clean and ready for GitHub push/release (do NOT push without explicit owner command).
 
 ## Blockers

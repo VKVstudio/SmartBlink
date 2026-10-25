@@ -1,4 +1,4 @@
-# HANDOFF — SmartPunto
+# HANDOFF — SmartBlink
 
 ## Session #001 — 2026-10-23 — Antigravity (Phase 0)
 
@@ -12,7 +12,7 @@
 **Open questions for user (approve before M1)**
 1. Stack approval: Rust + Inno Setup? (alternates were C++ / WiX — rejected for size/toolchain.)
 2. License: Apache-2.0 recommended; MIT acceptable.
-3. Product name in UI/installer final as "SmartPunto"? Company/publisher string for installer and registry?
+3. Product name in UI/installer final as "SmartBlink"? Company/publisher string for installer and registry?
 4. Profile corpora source: build our own generator from public permissive corpora (Wikipedia/OSCAR-class), or do you have preferred sources? License provenance will be recorded, no corpus text shipped.
 5. Code signing: release unsigned with published SHA-256 (documented SmartScreen caveat) vs you provide a cert?
 6. Minimum Windows: 10 1809 assumed (needed for `ToUnicodeEx` no-state-change and UI Automation reliability). OK, or support older?
@@ -27,7 +27,7 @@ Read `AGENTS.md` §Session Protocol, then `.system/checkpoint.md`. Do only the t
 
 **Done**
 - Owner approved architecture. Answers recorded: MIT license; Publisher `VKV Studio` / vkvstudio.com; profiles self-generated offline from public corpora (Wikipedia/Leipzig/OSCAR-class frequency dictionaries); unsigned releases + `SHA256SUMS.txt` + SmartScreen README section; Min OS Windows 10 1809; default fix hotkey double Left Shift (double Left Ctrl / Pause selectable); default alert mode `Both`.
-- Two mandated architecture edits applied: (§3.4) LED blink now defaults to Scroll Lock — Caps cannot uppercase mid-blink typing; Caps is opt-in with gap-only blinking (≥ ~80 ms since last key), abort-on-new-keystroke and ≤ 120 ms net-zero restore. (§4) Inno default dir corrected to `{autopf}\SmartPunto`.
+- Two mandated architecture edits applied: (§3.4) LED blink now defaults to Scroll Lock — Caps cannot uppercase mid-blink typing; Caps is opt-in with gap-only blinking (≥ ~80 ms since last key), abort-on-new-keystroke and ≤ 120 ms net-zero restore. (§4) Inno default dir corrected to `{autopf}\SmartBlink`.
 - `git init` + first docs commit created (no AI references in metadata).
 
 **Toolchain status**
@@ -335,3 +335,10 @@ All 12 milestones (M1–M12) are complete. Await owner desktop verification and 
    - **8 Role/Persona Skeptics:** Top-tier Cyber/Security Auditor, Input-Utility Systems Programmer, Everyday User, Novice/"Grandmother" User, Lawyer/Privacy Auditor, CEO/Director, Marketer, and SEO/GEO Optimizer.
    - **20 Layout/Country Skeptics (`en`, `ru`, `uk`, `be`, `kk`, `de`, `fr`, `es`, `pt`, `it`, `tr`, `pl`, `nl`, `sv`, `cs`, `el`, `he`, `ar`, `hy`, `ka`):** audit national layouts (especially European `AltGr` = `LCtrl+RAlt`, dead keys, `Shift` number rows on AZERTY/Czech, Turkish `i`/`ı`, Greek/Armenian punctuation, RTL Hebrew/Arabic, and country-specific UX/button needs).
 3. Fix all identified code, security, layout, UX, and documentation/SEO/GEO issues (including minor `Selection: Ctrl+Alt+Z` badge clipping in `src/settings.rs`); embed `SmartBlink_preview.png` into `README.md` and `README.ru.md` for GitHub presentation; rebuild release binary + installer; prepare repository for GitHub upload (await explicit owner approval before `git push`).
+
+## Session #022 — 2026-10-25 — Canonical Project Folder Rename (`C:\projects\SmartBlink`)
+
+**Done**
+- Updated Antigravity project workspace registry (`C:\Users\user\.gemini\config\projects\37e4e154-6d44-4f0b-87f1-709cf6959264.json`) to remove the stale legacy folder entry, leaving `C:\projects\SmartBlink` as the single source of truth.
+- Replaced all remaining old-folder references across `src/layout.rs`, `ARCHITECTURE.md`, `.system/checkpoint.md`, and `HANDOFF.md`.
+- Executed full `cargo clean` + release rebuild in both `tools/profilegen` and the root crate (`C:\projects\SmartBlink`), purging 170 stale `.d` dependency files that referenced the old folder path, and rebuilt `target\installer\SmartBlink-Setup-1.0.0.exe` + `SHA256SUMS.txt`.
