@@ -7,7 +7,7 @@
 
 **Wrong-layout typing alerts on your keyboard LED and a single-gesture word fix for Windows 10/11. Built for developers and bilingual typists who want instant layout correction without automatic text replacement breaking their code, passwords, or terminal commands.**
 
-**[Download Installer (`SmartBlink-Setup-1.0.0.exe`)](https://github.com/VKVstudio/SmartBlink/releases/latest)** · **[Portable `.exe` (`666 KB`)](https://github.com/VKVstudio/SmartBlink/releases/latest)** · **[Русская версия (`README.ru.md`)](README.ru.md)**
+**[Build from Source (`cargo build --release`)](#build-from-source-in-one-command)** · **[Architecture (`ARCHITECTURE.md`)](ARCHITECTURE.md)** · **[Русская версия (`README.ru.md`)](README.ru.md)**
 
 ![SmartBlink Settings and Tray Menu](SmartBlink_preview.png)
 
@@ -60,19 +60,26 @@ SmartBlink reads your installed Windows keyboard layouts (`HKL`) directly via `T
 | **Undo the last fix** (within 10 seconds) | Same gesture again (`2x Left Shift`) | Follows your chosen fix key |
 | **Convert highlighted text** | `Ctrl + Left Alt + Z` | Preserves all clipboard formats byte-for-byte; ignores `Right Alt` (`AltGr`) so Polish `AltGr+Z` (`ż`) works normally |
 
-## Install in 10 Seconds
+## Build from Source in One Command
 
-1. Grab **[`SmartBlink-Setup-1.0.0.exe`](https://github.com/VKVstudio/SmartBlink/releases/latest)** (installs per-user to `%LOCALAPPDATA%\Programs\SmartBlink` with no admin prompt required) or download the standalone **[`smartblink.exe`](https://github.com/VKVstudio/SmartBlink/releases/latest)** (`666 KB`) and run it from any folder.
-2. **Left-click** the tray icon (or run `smartblink.exe` a second time) to open the **Settings** window. Click **Trigger Test Alert Now** in the top banner to hear the 24 ms knock and watch your keyboard LED blink.
-3. **Right-click** the tray icon for quick one-click toggles (Pause, Alert Mode, LED Target, Fix Key, Run at Startup, and optional Admin Task for fixing text inside elevated windows).
-
-To verify your download against `SHA256SUMS.txt` on the release page:
+Because a keyboard utility sees every key you press, you shouldn't have to trust a black-box binary downloaded from the internet. SmartBlink has only one Rust dependency (`windows` crate by Microsoft) and compiles from source in a few seconds:
 
 ```powershell
-Get-FileHash .\smartblink.exe -Algorithm SHA256
+git clone https://github.com/VKVstudio/SmartBlink.git
+cd SmartBlink
+cargo build --release
 ```
 
-*(Note: Because community builds aren't signed with a paid EV certificate yet, Windows SmartScreen may show an "Unknown publisher" prompt on the first run. Click **More info** -> **Run anyway**, or build the binary yourself in 10 seconds with `cargo build --release`.)*
+Run the compiled binary (`target\release\smartblink.exe`):
+
+1. **Left-click** the tray icon (or run `smartblink.exe` a second time) to open the **Settings** window. Click **Trigger Test Alert Now** in the top banner to hear the 24 ms knock and watch your keyboard LED blink.
+2. **Right-click** the tray icon for quick one-click toggles (Pause, Alert Mode, LED Target, Fix Key, Run at Startup, and optional Admin Task for fixing text inside elevated windows).
+
+To run the full test suite (including the read-only verification across all 45 Windows 11 `C:\Windows\System32\KBD*.DLL` layout drivers on your machine):
+
+```powershell
+cargo test --release
+```
 
 ## Why It's Safe to Run at Work
 

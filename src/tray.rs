@@ -223,19 +223,8 @@ mod tests {
     fn embedded_icon_resource_loads() {
         unsafe {
             let hmod = GetModuleHandleW(None).expect("GetModuleHandleW");
-            let hinst = HINSTANCE(hmod.0 as _);
-            let cx = GetSystemMetrics(SM_CXSMICON);
-            let cy = GetSystemMetrics(SM_CYSMICON);
-            let h = LoadImageW(
-                hinst,
-                PCWSTR(IDI_MAIN as *const u16),
-                IMAGE_ICON,
-                cx,
-                cy,
-                LR_DEFAULTCOLOR,
-            )
-            .expect("LoadImageW for IDI_MAIN (101) must succeed");
-            assert!(!h.is_invalid());
+            let hicon = load_tray_icon(hmod);
+            assert!(!hicon.0.is_null(), "load_tray_icon must return a valid HICON");
         }
     }
 }
