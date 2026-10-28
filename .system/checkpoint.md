@@ -1,6 +1,6 @@
 # Checkpoint — SmartBlink
 
-`Current Phase`: Released (`v1.0.0`) — Pushed `master` + `v1.0.0` tag to `https://github.com/VKVstudio/SmartBlink`.
+`Current Phase`: Public Beta (`v0.1.0-beta`) — Ready to push `master` + `v0.1.0-beta` tag to `https://github.com/VKVstudio/SmartBlink`.
 `Approved Stack`: Rust (`x86_64-pc-windows-gnullvm` via LLVM-MinGW UCRT; MSVC/Windows SDK forbidden), `windows` crate 0.58, Win32 tray + Settings window, hand-rolled flat TOML config in `%APPDATA%\SmartBlink\config.toml`, WASAPI shared audio, Inno Setup 6 installer (per-user default `{autopf}`, optional elevated ONLOGON scheduled task). License MIT. Publisher `VKV Studio` / vkvstudio.com. Min OS: Windows 10 1809. Default fix hotkey: double Left Shift. Default alert mode: Both (audio + LED), LED defaults to Scroll Lock.
 
 ## Completed
@@ -68,12 +68,13 @@
     - Expanded all 18 non-EN/RU training corpora in `tools/profilegen/src/corpora.rs` to ~350–450 words each, added Dutch trema/accented vowels (`áéèêëïóöü`) and Arabic `ةهءؤئ` vowel carriers in `tools/profilegen/src/main.rs`, and regenerated all 20 `assets/profiles/*.bin` files (`131,356` bytes total; 900–1380 trigrams per language).
 
 ## Verified
-- `cargo build --release`: 0 warnings (`target\x86_64-pc-windows-gnullvm\release\smartblink.exe`, `682,496` bytes).
+- `cargo build --release`: 0 warnings (`target\release\smartblink.exe`, `0.1.0-beta`, `682,496` bytes).
 - `cargo test --release`: `49 passed; 0 failed` (including `real_45_system_kbd_dll_matrix` which loads all 45 real `C:\Windows\System32\KBD*.DLL` system binaries via `KbdLayerDescriptor` and verifies single-word detection, multi-word `plan_word_fix` replacement, and zero false positives across all 45 Windows 11 keyboard drivers).
-- `ISCC.exe installer\SmartBlink.iss`: `target\installer\SmartBlink-Setup-1.0.0.exe` + `target\installer\SHA256SUMS.txt` updated.
+- `ISCC.exe installer\SmartBlink.iss`: `target\installer\SmartBlink-Setup-0.1.0-beta.exe` compiled cleanly.
+- `README.md` & `README.ru.md`: updated with honest `v0.1.0-beta` Public Beta callout (live-tested `EN <-> RU` vs 45-DLL automated test matrix needing real-world testing), both Option 1 (`cargo build --release`) and Option 2 (prebuilt `smartblink.exe` / `SmartBlink-Setup-0.1.0-beta.exe` in GitHub Releases), zero competitor mentions, and `ig-human` `detect.py` score `78.7 PASS` (`0` em dashes, `0` structural tells).
 
 ## Next Immediate Task
-- None — `v1.0.0` pushed to `https://github.com/VKVstudio/SmartBlink`. Monitor GitHub Actions release workflow if needed.
+- Push `v0.1.0-beta` commit and tag to `https://github.com/VKVstudio/SmartBlink` upon owner confirmation.
 
 ## Blockers
 - None. (`iscc` for Inno Setup 6 needed only at M10.)

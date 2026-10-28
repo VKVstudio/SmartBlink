@@ -3,11 +3,14 @@
 
 #define MyAppName "SmartBlink"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "0.1.0-beta"
 #endif
 #define MyAppPublisher "VKV Studio"
 #define MyAppURL "https://vkvstudio.com"
 #define MyAppExeName "smartblink.exe"
+#ifndef MyAppBinPath
+  #define MyAppBinPath "..\target\release\smartblink.exe"
+#endif
 
 [Setup]
 AppId={{8D6E4A21-7C91-4E3B-9A42-5E10B8C7D901}
@@ -48,7 +51,7 @@ Name: "autostart"; Description: "Run {#MyAppName} at Windows startup (recommende
 Name: "elevatedtask"; Description: "Register elevated logon scheduled task (work above Administrator windows without UAC prompt)"; GroupDescription: "Startup options:"; Flags: unchecked
 
 [Files]
-Source: "..\target\x86_64-pc-windows-gnullvm\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#MyAppBinPath}"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
 Source: "..\assets\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\profiles\LICENSES.md"; DestDir: "{app}\licenses"; Flags: ignoreversion

@@ -1,6 +1,6 @@
 [package]
 name = "smartblink"
-version = "1.0.0"
+version = "0.1.0-beta"
 description = "Privacy-first Windows 10/11 tray utility that detects wrong keyboard layout typing with LED + audio alerts and fixes words on a single manual gesture (no auto-replace)."
 authors = ["VKV Studio <https://vkvstudio.com>"]
 license = "MIT"

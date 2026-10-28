@@ -406,4 +406,19 @@ All 12 milestones (M1–M12) are complete. Await owner desktop verification and 
 - Pushed `master` and annotated tag `v1.0.0` to `https://github.com/VKVstudio/SmartBlink.git` per owner approval.
 
 **Next agent**
-- `v1.0.0` is live on GitHub (`https://github.com/VKVstudio/SmartBlink`).
+- `v0.1.0-beta` is ready for GitHub (`https://github.com/VKVstudio/SmartBlink`).
+
+## Session #026 — 2026-10-28 — Public Beta (`v0.1.0-beta`) Versioning, Dual Build/EXE Workflow & Clean README
+
+**Done**
+- Re-versioned the project to `0.1.0-beta` (`v0.1.0-beta`) across `Cargo.toml`, `assets/version.rc` (`FILEVERSION 0,1,0,0` / `FileVersion "0.1.0-beta"`), `assets/app.manifest`, `src/settings.rs` (Settings & About windows), `installer/SmartBlink.iss`, and `CHANGELOG.md`.
+- Updated `README.md` and `README.ru.md`:
+  - Added prominent **Public Beta (`v0.1.0-beta`)** notice explaining what is verified in live daily use (`EN <-> RU`) versus what is verified by the 45-DLL automated test matrix and needs real-world community testing across apps and hardware.
+  - Provided both **Option 1: Build from source in one command (`cargo build --release`)** and **Option 2: Prebuilt `.exe` (`smartblink.exe` & `SmartBlink-Setup-0.1.0-beta.exe` via GitHub Releases)** for users who want a ready-to-run binary without installing Rust.
+  - Verified zero competitor brand names and `ig-human` `detect.py` score `78.7 PASS` (`0` em dashes, `0` structural tells).
+- Updated `.github/workflows/release.yml` to run `cargo test --release` + `cargo build --release` on every push and automatically package and attach `smartblink.exe`, `SmartBlink-Setup-<ver>.exe`, and `SHA256SUMS.txt` as a pre-release on `v*` tags.
+
+**Verified**
+- `cargo test --release` -> `49 passed; 0 failed`.
+- `cargo build --release` -> 0 warnings (`target\release\smartblink.exe`, `691,200` bytes).
+- `ISCC.exe installer\SmartBlink.iss` -> `target\installer\SmartBlink-Setup-0.1.0-beta.exe` (`2,356,254` bytes).

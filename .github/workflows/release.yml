@@ -1,15 +1,17 @@
-name: CI Build & Test
+name: CI Build, Test & Release
 
 on:
   push:
     branches:
       - master
       - main
+    tags:
+      - "v*"
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-and-test:
@@ -33,3 +35,30 @@ jobs:
         shell: pwsh
         run: cargo build --release
 
+      - name: Package installer and publish GitHub Release on tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $tag = "${env:GITHUB_REF_NAME}"
+          $ver = $tag.TrimStart('v')
+          iscc "/DMyAppVersion=$ver" "installer\SmartBlink.iss"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target\release\smartblink.exe" "dist\smartblink.exe"
+          Copy-Item "target\installer\SmartBlink-Setup-$ver.exe" "dist\SmartBlink-Setup-$ver.exe"
+          $h1 = (Get-FileHash "dist\smartblink.exe" -Algorithm SHA256).Hash.ToLower()
+          $h2 = (Get-FileHash "dist\SmartBlink-Setup-$ver.exe" -Algorithm SHA256).Hash.ToLower()
+          @(
+            "$h1  smartblink.exe"
+            "$h2  SmartBlink-Setup-$ver.exe"
+          ) | Set-Content -Encoding utf8 "dist\SHA256SUMS.txt"
+
+      - name: Upload Release Assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+          generate_release_notes: true
+          files: |
+            dist/smartblink.exe
+            dist/SmartBlink-Setup-*.exe
+            dist/SHA256SUMS.txt

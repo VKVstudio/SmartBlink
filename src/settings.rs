@@ -1743,7 +1743,7 @@ unsafe fn paint_settings_window(hwnd: HWND) {
     present_canvas_with_text(hwnd, &c, s, |hdc, f| {
         // Tile 1 text
         draw_text_str(hdc, f.hero, COL_TEXT, srect(152, 34, 210, 32, s), "SmartBlink", DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0);
-        draw_text_str(hdc, f.mono, COL_CYAN, srect(288, 38, 70, 24, s), "v1.0.0", DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0);
+        draw_text_str(hdc, f.mono, COL_CYAN, srect(282, 38, 84, 24, s), "v0.1.0-beta", DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0);
         draw_text_str(
             hdc,
             f.caption,
@@ -1926,7 +1926,7 @@ unsafe fn paint_about_window(hwnd: HWND) {
 
     present_canvas_with_text(hwnd, &c, s, |hdc, f| {
         draw_text_str(hdc, f.hero, COL_TEXT, srect(134, 34, 240, 30, s), "SmartBlink", DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0);
-        draw_text_str(hdc, f.mono, COL_CYAN, srect(272, 37, 120, 24, s), "v1.0.0 · MIT", DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0);
+        draw_text_str(hdc, f.mono, COL_CYAN, srect(272, 37, 160, 24, s), "v0.1.0-beta · MIT", DT_LEFT.0 | DT_VCENTER.0 | DT_SINGLELINE.0);
         draw_text_str(
             hdc,
             f.body,

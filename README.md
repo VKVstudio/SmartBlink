@@ -1,15 +1,18 @@
 # SmartBlink
 
-[![Release](https://img.shields.io/github/v/release/VKVstudio/SmartBlink?style=flat-square&color=00b4d8)](https://github.com/VKVstudio/SmartBlink/releases/latest)
+[![Status: Public Beta](https://img.shields.io/badge/status-v0.1.0--beta%20(needs%20testing)-f59e0b?style=flat-square)](https://github.com/VKVstudio/SmartBlink/issues)
+[![Release](https://img.shields.io/github/v/release/VKVstudio/SmartBlink?include_prereleases&style=flat-square&color=00b4d8)](https://github.com/VKVstudio/SmartBlink/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-0078d4?style=flat-square)](https://github.com/VKVstudio/SmartBlink/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](LICENSE)
-[![Built with Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20Win32-dea584?style=flat-square)](docs/BUILDING.md)
 
 **Wrong-layout typing alerts on your keyboard LED and a single-gesture word fix for Windows 10/11. Built for developers and bilingual typists who want instant layout correction without automatic text replacement breaking their code, passwords, or terminal commands.**
 
-**[Build from Source (`cargo build --release`)](#build-from-source-in-one-command)** · **[Architecture (`ARCHITECTURE.md`)](ARCHITECTURE.md)** · **[Русская версия (`README.ru.md`)](README.ru.md)**
+**[Build from Source (`cargo build --release`)](#get-started-build-from-source-or-grab-the-exe)** · **[Download Ready-Made `.exe` (Releases)](https://github.com/VKVstudio/SmartBlink/releases/latest)** · **[Architecture (`ARCHITECTURE.md`)](ARCHITECTURE.md)** · **[Русская версия (`README.ru.md`)](README.ru.md)**
 
 ![SmartBlink Settings and Tray Menu](SmartBlink_preview.png)
+
+> **Early Beta (`v0.1.0-beta`) - Call for Real-World Testing:**
+> This is an early public beta, not a finished 1.0 release. The core hook engine and `EN <-> RU` typing are tested in daily live work on Windows 11. The other 18 languages and 43 Windows keyboard drivers pass 49 automated tests against the real `C:\Windows\System32\KBD*.DLL` files, but automated tests don't replace human fingers. If you type in `UK`, `BE`, `KK`, `DE`, `FR`, `ES`, `PT`, `IT`, `NL`, `SV`, `PL`, `CS`, `EL`, `TR`, `HE`, `AR`, `HY`, or `KA` and spot a false alert, a missed word, or an app where `SendInput` behaves oddly, please [open an Issue](https://github.com/VKVstudio/SmartBlink/issues) with the word and layout pair.
 
 ## The Problem
 
@@ -27,24 +30,24 @@ SmartBlink separates **detection** from **correction**. It won't ever touch your
 
 ## Approach Comparison
 
-| What matters in daily use | **SmartBlink (Alert + Gesture)** | **Auto-Replacing Switchers** | **Custom Macro Scripts** |
+| What matters in daily use | **SmartBlink (`v0.1.0-beta`)** | **Auto-Replacing Switchers** | **Custom Macro Scripts** |
 |---|---|---|---|
 | Rewrites text on its own while you type? | **Never** (only on your gesture) | Yes (can alter code, slang, or commands) | Manual hotkey only |
 | Alerts your eyes on the keyboard LED? | **Yes** (net-zero LED + 24 ms knock) | Audio or visual popup only | No |
 | Languages supported out of the box | **20 languages** (`131 KB` total) | Usually 2 active languages | Manual character tables |
-| Works with `AltGr`, dead keys, and RTL (`AR`/`HE`)? | **Yes** (tested on 45 Windows `KBD*.DLL` drivers) | Partial | Fragile |
+| Works with `AltGr`, dead keys, and RTL (`AR`/`HE`)? | **Yes** (45 Windows `KBD*.DLL` drivers) | Partial | Fragile |
 | Stops automatically in password fields? | **Yes** (Windows UI Automation `IsPassword`) | Varies by app | No |
 | Keeps rich clipboard data on `Ctrl+Alt+Z`? | **Yes** (all `HGLOBAL` formats byte-for-byte) | Often plain text only | Overwrites clipboard |
 | Memory and disk size | **`< 3 MB` RAM / `666 KB` single `.exe`** | 20 to 40 MB RAM | Requires scripting runtime |
 | Source code & network policy | **MIT open source** (RAM-only, zero network APIs) | Usually closed-source | Varies |
 
-## Tested Across 20 Languages and 45 Windows Keyboard Drivers
+## 20 Languages and 45 Windows Keyboard Drivers
 
 Most layout tools hardcode a single US QWERTY to Russian JCUKEN table and fall apart as soon as you use French AZERTY, German QWERTZ, Czech top-row caron letters, Polish `AltGr` diacritics, Spanish dead keys, Arabic `لا` ligatures, or Georgian shifted consonants.
 
-SmartBlink reads your installed Windows keyboard layouts (`HKL`) directly via `ToUnicodeEx` across all four modifier layers (`Base`, `Shift`, `AltGr`, `Shift+AltGr`) and scores candidates against embedded bigram and trigram models (`assets/profiles/*.bin`). Every release is verified against all 45 official `C:\Windows\System32\KBD*.DLL` drivers shipped with Windows 11:
+SmartBlink reads your installed Windows keyboard layouts (`HKL`) directly via `ToUnicodeEx` across all four modifier layers (`Base`, `Shift`, `AltGr`, `Shift+AltGr`) and scores candidates against embedded bigram and trigram models (`assets/profiles/*.bin`). Every build is checked against all 45 official `C:\Windows\System32\KBD*.DLL` drivers shipped with Windows 11:
 
-| Script / Group | Languages (`20`) | Tested Windows 11 Layouts (`45 DLLs`) | Example Wrong-Layout Input -> Fixed Output |
+| Script / Group | Languages (`20`) | Windows 11 Layouts in Test Matrix (`45 DLLs`) | Example Wrong-Layout Input -> Fixed Output |
 |---|---|---|---|
 | **Cyrillic & Slavic** | `RU`, `UK`, `BE`, `KK`, `PL`, `CS` | JCUKEN, Typewriter, UK-101, UK-Enhanced (`ґ`), Belarusian (`ў`), Kazakh, Polish Programmers & 214, Czech QWERTZ & QWERTY | `ghbdtn rfr ltkf` -> `привет как дела`<br>`\heyn` -> `ґрунт`<br>`c2ktv` -> `сәлем`<br>`4e3tina` -> `čeština` |
 | **Western & Northern Europe** | `EN`, `DE`, `FR`, `ES`, `PT`, `IT`, `NL`, `SV` | US, UK, US-Intl, German QWERTZ, Swiss DE/FR, French AZERTY (Legacy, Standard, Belgian), Spanish & LatAm, Portuguese & ABNT2, Italian & 142, Dutch, Swedish | `stra-e` -> `straße`<br>`c4est d2j0` -> `c'est déjà`<br>`tambi'en` -> `también`<br>`cora;'ao` -> `coração`<br>`ocks[` -> `också` |
@@ -60,9 +63,11 @@ SmartBlink reads your installed Windows keyboard layouts (`HKL`) directly via `T
 | **Undo the last fix** (within 10 seconds) | Same gesture again (`2x Left Shift`) | Follows your chosen fix key |
 | **Convert highlighted text** | `Ctrl + Left Alt + Z` | Preserves all clipboard formats byte-for-byte; ignores `Right Alt` (`AltGr`) so Polish `AltGr+Z` (`ż`) works normally |
 
-## Build from Source in One Command
+## Get Started: Build from Source or Grab the `.exe`
 
-Because a keyboard utility sees every key you press, you shouldn't have to trust a black-box binary downloaded from the internet. SmartBlink has only one Rust dependency (`windows` crate by Microsoft) and compiles from source in a few seconds:
+### Option 1: Build from Source in One Command (Recommended)
+
+Because a keyboard utility sees every key you press, you shouldn't have to trust a precompiled binary. SmartBlink has only one Rust dependency (`windows` crate by Microsoft) and builds from source in a few seconds:
 
 ```powershell
 git clone https://github.com/VKVstudio/SmartBlink.git
@@ -70,16 +75,23 @@ cd SmartBlink
 cargo build --release
 ```
 
-Run the compiled binary (`target\release\smartblink.exe`):
-
-1. **Left-click** the tray icon (or run `smartblink.exe` a second time) to open the **Settings** window. Click **Trigger Test Alert Now** in the top banner to hear the 24 ms knock and watch your keyboard LED blink.
-2. **Right-click** the tray icon for quick one-click toggles (Pause, Alert Mode, LED Target, Fix Key, Run at Startup, and optional Admin Task for fixing text inside elevated windows).
-
-To run the full test suite (including the read-only verification across all 45 Windows 11 `C:\Windows\System32\KBD*.DLL` layout drivers on your machine):
+That produces a standalone `target\release\smartblink.exe` (`~666 KB`). To run the 49 automated tests (including the read-only check across all 45 Windows 11 `C:\Windows\System32\KBD*.DLL` layout drivers on your machine):
 
 ```powershell
 cargo test --release
 ```
+
+### Option 2: Prebuilt `.exe` (If You Just Want to Run It)
+
+If you don't have the Rust toolchain installed and just want a ready-made binary to test right away, grab it from **[GitHub Releases (`v0.1.0-beta`)](https://github.com/VKVstudio/SmartBlink/releases/latest)**:
+
+- **`smartblink.exe`** (`666 KB`) - single portable executable. Put it anywhere and run it; no installer or runtime needed.
+- **`SmartBlink-Setup-0.1.0-beta.exe`** - optional per-user installer with Start Menu shortcut and clean uninstaller.
+
+Once `smartblink.exe` is running:
+
+1. **Left-click** the tray icon (or launch `smartblink.exe` a second time) to open the **Settings** window. Click **Trigger Test Alert Now** in the top banner to hear the 24 ms knock and watch your keyboard LED blink.
+2. **Right-click** the tray icon for quick one-click toggles (Pause, Alert Mode, LED Target, Fix Key, Run at Startup, and optional Admin Task for fixing text inside elevated windows).
 
 ## Why It's Safe to Run at Work
 

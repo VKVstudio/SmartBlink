@@ -1,8 +1,10 @@
-# Changelog — SmartBlink
+# Changelog - SmartBlink
 
-## v1.0.0 — 2026-10-25
+## v0.1.0-beta - 2026-10-28 (Public Beta)
 
-Initial public release of **SmartBlink** for Windows 10 (1809+) and Windows 11 (x64).
+Initial public beta release of **SmartBlink** for Windows 10 (1809+) and Windows 11 (x64).
+
+> **Beta Status:** Core `EN <-> RU` detection and manual fix workflows are tested in daily live use on Windows 11. The remaining 18 languages and 43 Windows keyboard drivers are verified against all 45 system `C:\Windows\System32\KBD*.DLL` files in automated tests and are open for real-world community testing.
 
 ### Highlights
 - **Non-Intrusive Wrong-Layout Detection:**
@@ -21,4 +23,4 @@ Initial public release of **SmartBlink** for Windows 10 (1809+) and Windows 11 (
   - Volatile zeroing of all keystroke buffers and clipboard snapshots on reset and exit; zero disk logging and zero network calls.
 - **Canonical Dark Bento UI, Tray Flyout & Installer:**
   - Per-monitor DPI-aware 12-column Dark Bento Settings window (`SmartBlinkSettingsWnd`), About window (`SmartBlinkAboutWnd`), and Tray Flyout (`SmartBlinkTrayPopupWnd`) with vector-rasterized logo, Live Hardware Alert Test button, 1-click segmented cards, and second-instance activation.
-  - Per-user Inno Setup 6 installer (`SmartBlink-Setup-1.0.0.exe`).
+  - Per-user Inno Setup 6 installer (`SmartBlink-Setup-0.1.0-beta.exe`).
