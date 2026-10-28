@@ -8,8 +8,9 @@ use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WIN32_ERROR};
 use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
 use windows::Win32::System::Registry::{
-    RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY,
-    HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_SZ, REG_VALUE_TYPE,
+    RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
+    HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ,
+    REG_VALUE_TYPE,
 };
 use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use windows::Win32::UI::Shell::ShellExecuteW;
@@ -110,8 +111,17 @@ pub fn query_run_value_named(value_name: &str) -> Option<String> {
 pub fn set_run_value_named(value_name: &str, command: &str) -> bool {
     unsafe {
         let mut hkey = HKEY::default();
-        if RegOpenKeyExW(HKEY_CURRENT_USER, RUN_SUBKEY, 0, KEY_SET_VALUE, &mut hkey)
-            != WIN32_ERROR(0)
+        if RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            RUN_SUBKEY,
+            0,
+            None,
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            None,
+            &mut hkey,
+            None,
+        ) != WIN32_ERROR(0)
         {
             return false;
         }

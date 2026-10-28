@@ -1,13 +1,13 @@
 # SmartBlink
 
 [![Status: Public Beta](https://img.shields.io/badge/status-v0.1.0--beta%20(needs%20testing)-f59e0b?style=flat-square)](https://github.com/VKVstudio/SmartBlink/issues)
-[![Release](https://img.shields.io/github/v/release/VKVstudio/SmartBlink?include_prereleases&style=flat-square&color=00b4d8)](https://github.com/VKVstudio/SmartBlink/releases/latest)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-0078d4?style=flat-square)](https://github.com/VKVstudio/SmartBlink/releases/latest)
+[![Release](https://img.shields.io/github/v/release/VKVstudio/SmartBlink?include_prereleases&style=flat-square&color=00b4d8)](https://github.com/VKVstudio/SmartBlink/releases/tag/v0.1.0-beta)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-0078d4?style=flat-square)](https://github.com/VKVstudio/SmartBlink/releases/tag/v0.1.0-beta)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](LICENSE)
 
 **Мгновенное оповещение о наборе в неверной раскладке на светодиод клавиатуры и исправление одним жестом для Windows 10/11. Сделано для разработчиков и всех, кто много печатает на нескольких языках и не хочет, чтобы автозамена сама переписывала код, пароли, команды терминала и имена собственные.**
 
-**[Собрать из исходников (`cargo build --release`)](#запуск-сборка-одной-командой-или-готовый-exe)** · **[Скачать готовый `.exe` (Releases)](https://github.com/VKVstudio/SmartBlink/releases/latest)** · **[Архитектура (`ARCHITECTURE.md`)](ARCHITECTURE.md)** · **[English README (`README.md`)](README.md)**
+**[Собрать из исходников (`cargo build --release`)](#запуск-сборка-одной-командой-или-готовый-exe)** · **[Скачать `smartblink.exe` (`v0.1.0-beta`)](https://github.com/VKVstudio/SmartBlink/releases/download/v0.1.0-beta/smartblink.exe)** · **[Все релизы](https://github.com/VKVstudio/SmartBlink/releases/tag/v0.1.0-beta)** · **[English README (`README.md`)](README.md)**
 
 ![Окно настроек и меню в трее SmartBlink](SmartBlink_preview.png)
 
@@ -83,10 +83,10 @@ cargo test --release
 
 ### Вариант 2: Готовый `.exe` (для тех, кому лень ставить Rust и собирать)
 
-Если не хочется ставить компилятор Rust и нужно просто скачать и запустить готовую сборку, возьми её в разделе **[GitHub Releases (`v0.1.0-beta`)](https://github.com/VKVstudio/SmartBlink/releases/latest)**:
+Если не хочется ставить компилятор Rust и нужно просто скачать и запустить готовую сборку, возьми её напрямую в разделе **[GitHub Releases (`v0.1.0-beta`)](https://github.com/VKVstudio/SmartBlink/releases/tag/v0.1.0-beta)**:
 
-- **`smartblink.exe`** (`666 КБ`) - портативный одиночный файл. Просто положи в любую папку и запусти, установка не нужна.
-- **`SmartBlink-Setup-0.1.0-beta.exe`** - опциональный установщик (добавляет ярлык в меню «Пуск» и штатное удаление).
+- **[`smartblink.exe`](https://github.com/VKVstudio/SmartBlink/releases/download/v0.1.0-beta/smartblink.exe)** (`675 КБ`) - портативный одиночный файл. Просто положи в любую папку и запусти, установка не нужна.
+- **[`SmartBlink-Setup-0.1.0-beta.exe`](https://github.com/VKVstudio/SmartBlink/releases/download/v0.1.0-beta/SmartBlink-Setup-0.1.0-beta.exe)** (`2.25 МБ`) - опциональный установщик (добавляет ярлык в меню «Пуск» и штатное удаление).
 
 После запуска `smartblink.exe`:
 

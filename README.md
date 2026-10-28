@@ -1,13 +1,13 @@
 # SmartBlink
 
 [![Status: Public Beta](https://img.shields.io/badge/status-v0.1.0--beta%20(needs%20testing)-f59e0b?style=flat-square)](https://github.com/VKVstudio/SmartBlink/issues)
-[![Release](https://img.shields.io/github/v/release/VKVstudio/SmartBlink?include_prereleases&style=flat-square&color=00b4d8)](https://github.com/VKVstudio/SmartBlink/releases/latest)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-0078d4?style=flat-square)](https://github.com/VKVstudio/SmartBlink/releases/latest)
+[![Release](https://img.shields.io/github/v/release/VKVstudio/SmartBlink?include_prereleases&style=flat-square&color=00b4d8)](https://github.com/VKVstudio/SmartBlink/releases/tag/v0.1.0-beta)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(x64)-0078d4?style=flat-square)](https://github.com/VKVstudio/SmartBlink/releases/tag/v0.1.0-beta)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](LICENSE)
 
 **Wrong-layout typing alerts on your keyboard LED and a single-gesture word fix for Windows 10/11. Built for developers and bilingual typists who want instant layout correction without automatic text replacement breaking their code, passwords, or terminal commands.**
 
-**[Build from Source (`cargo build --release`)](#get-started-build-from-source-or-grab-the-exe)** · **[Download Ready-Made `.exe` (Releases)](https://github.com/VKVstudio/SmartBlink/releases/latest)** · **[Architecture (`ARCHITECTURE.md`)](ARCHITECTURE.md)** · **[Русская версия (`README.ru.md`)](README.ru.md)**
+**[Build from Source (`cargo build --release`)](#get-started-build-from-source-or-grab-the-exe)** · **[Download `smartblink.exe` (`v0.1.0-beta`)](https://github.com/VKVstudio/SmartBlink/releases/download/v0.1.0-beta/smartblink.exe)** · **[All Releases](https://github.com/VKVstudio/SmartBlink/releases/tag/v0.1.0-beta)** · **[Русская версия (`README.ru.md`)](README.ru.md)**
 
 ![SmartBlink Settings and Tray Menu](SmartBlink_preview.png)
 
@@ -83,10 +83,10 @@ cargo test --release
 
 ### Option 2: Prebuilt `.exe` (If You Just Want to Run It)
 
-If you don't have the Rust toolchain installed and just want a ready-made binary to test right away, grab it from **[GitHub Releases (`v0.1.0-beta`)](https://github.com/VKVstudio/SmartBlink/releases/latest)**:
+If you don't have the Rust toolchain installed and just want a ready-made binary to test right away, grab it directly from **[GitHub Releases (`v0.1.0-beta`)](https://github.com/VKVstudio/SmartBlink/releases/tag/v0.1.0-beta)**:
 
-- **`smartblink.exe`** (`666 KB`) - single portable executable. Put it anywhere and run it; no installer or runtime needed.
-- **`SmartBlink-Setup-0.1.0-beta.exe`** - optional per-user installer with Start Menu shortcut and clean uninstaller.
+- **[`smartblink.exe`](https://github.com/VKVstudio/SmartBlink/releases/download/v0.1.0-beta/smartblink.exe)** (`675 KB`) - single portable executable. Put it anywhere and run it; no installer or runtime needed.
+- **[`SmartBlink-Setup-0.1.0-beta.exe`](https://github.com/VKVstudio/SmartBlink/releases/download/v0.1.0-beta/SmartBlink-Setup-0.1.0-beta.exe)** (`2.25 MB`) - optional per-user installer with Start Menu shortcut and clean uninstaller.
 
 Once `smartblink.exe` is running:
 
