@@ -881,11 +881,11 @@ mod tests {
         );
 
         // 5. Full 6-word sentence with short words and expressive diminutive:
-        let burst5 = type_str("rfr nj dct hfdyj t,fytymrj hf,jnftn", FULL_US);
+        let burst5 = type_str("rfr nj dct hfdyj cnhfyytymrj hf,jnftn", FULL_US);
         let plan5 = plan_word_fix(&burst5, US_HKL, &tables).expect("plan5");
         assert_eq!(
             plan5.replacement_text,
-            "как то все равно ебаненько работает"
+            "как то все равно странненько работает"
         );
 
         // 6. Full 11-word RU->EN sentence with Russian `?` (Shift+7) on `акшутв?` and `,` (Shift+/) on `ерштл,`:

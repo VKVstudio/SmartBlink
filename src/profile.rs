@@ -1108,8 +1108,8 @@ mod tests {
             ("lf;t", "даже"),
             ("dblyj", "видно"),
             ("hfdyj", "равно"),
-            ("t,fytymrj", "ебаненько"),
-            ("t,fytymRj", "ебаненьКо"),
+            ("cnhfyytymrj", "странненько"),
+            ("cnhfyytymRj", "странненьКо"),
         ] {
             let keys = type_on_layout(garbled_us, US_LAYOUT);
             let verdict = evaluate_tables(&keys, US_HKL, &tables).unwrap_or_else(|| {

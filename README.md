@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square)](LICENSE)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20Win32-dea584?style=flat-square)](docs/BUILDING.md)
 
-**Wrong-layout typing alerts on your keyboard LED and a single-gesture word fix for Windows 10/11. Built for people who got burned by Punto Switcher auto-replacing their code, passwords, and terminal commands.**
+**Wrong-layout typing alerts on your keyboard LED and a single-gesture word fix for Windows 10/11. Built for developers and bilingual typists who want instant layout correction without automatic text replacement breaking their code, passwords, or terminal commands.**
 
 **[Download Installer (`SmartBlink-Setup-1.0.0.exe`)](https://github.com/VKVstudio/SmartBlink/releases/latest)** · **[Portable `.exe` (`666 KB`)](https://github.com/VKVstudio/SmartBlink/releases/latest)** · **[Русская версия (`README.ru.md`)](README.ru.md)**
 
@@ -15,7 +15,7 @@
 
 If you type in two or three languages and look at the keyboard instead of the monitor, you've been there. You type five words, look up at the screen, and see `Ghbdtn rfr ltkf` instead of `Привет как дела` (or `Руддщ цщкдв` instead of `Hello world`). Then you're stuck holding Backspace, switching the layout, and typing the whole line again.
 
-Classic auto-switchers like Punto Switcher try to guess and rewrite your text while you're typing. That's fine until you write a shell command, a SQL query, a camelCase variable, a brand name, or a password in a custom input box. One wrong guess and your text gets mangled mid-sentence, so you're fighting the tool that's supposed to help you.
+Traditional auto-replacing switchers try to guess the language and rewrite your text while you're typing. That's fine for plain prose, right up until you write a shell command, a SQL query, a camelCase variable, a brand name, or a password in a custom input box. One wrong guess and your text gets mangled mid-sentence, so you're fighting the tool that's supposed to help you.
 
 ## How SmartBlink Works
 
@@ -25,18 +25,18 @@ SmartBlink separates **detection** from **correction**. It won't ever touch your
 2. **You decide whether to fix it.** Double-tap `Left Shift` within 300 ms, and SmartBlink replaces the last word (or the whole wrong-layout phrase you've just typed) and switches the window's keyboard layout.
 3. **Changed your mind?** Double-tap `Left Shift` again within 10 seconds and it'll undo the fix and switch back. If you ignore the alert and keep typing, SmartBlink stays out of your way. Ignore the same word three times and it's whitelisted for the rest of your session.
 
-## Quick Comparison
+## Approach Comparison
 
-| What matters in daily use | **SmartBlink** | **Punto Switcher** | **Caramba Switcher** | **AutoHotkey scripts** |
-|---|---|---|---|---|
-| Rewrites text on its own while you type? | **Never** (only on your gesture) | Yes (breaks code and slang) | Yes (forced auto-switch) | Depends on script |
-| Alerts your eyes on the keyboard LED? | **Yes** (net-zero LED + 24 ms knock) | Sound only | No | No |
-| Languages supported out of the box | **20 languages** (`131 KB` total) | Mostly RU / EN | Limited | Manual character tables |
-| Works with `AltGr`, dead keys, and RTL (`AR`/`HE`)? | **Yes** (tested on 45 Windows `KBD*.DLL` drivers) | Partial | Partial | Fragile |
-| Stops automatically in password fields? | **Yes** (Windows UI Automation `IsPassword`) | Manual exclusions | Heuristic | No |
-| Keeps rich clipboard data on `Ctrl+Alt+Z`? | **Yes** (all `HGLOBAL` formats byte-for-byte) | Often drops rich formats | Plain text only | Overwrites clipboard |
-| Memory and disk size | **`< 3 MB` RAM / `666 KB` single `.exe`** | 25 to 40 MB RAM + background services | ~20 MB RAM | Requires AHK runtime |
-| Telemetry, disk logs, or network access | **None** (RAM-only, MIT open source) | Proprietary (Yandex) | Proprietary | Varies |
+| What matters in daily use | **SmartBlink (Alert + Gesture)** | **Auto-Replacing Switchers** | **Custom Macro Scripts** |
+|---|---|---|---|
+| Rewrites text on its own while you type? | **Never** (only on your gesture) | Yes (can alter code, slang, or commands) | Manual hotkey only |
+| Alerts your eyes on the keyboard LED? | **Yes** (net-zero LED + 24 ms knock) | Audio or visual popup only | No |
+| Languages supported out of the box | **20 languages** (`131 KB` total) | Usually 2 active languages | Manual character tables |
+| Works with `AltGr`, dead keys, and RTL (`AR`/`HE`)? | **Yes** (tested on 45 Windows `KBD*.DLL` drivers) | Partial | Fragile |
+| Stops automatically in password fields? | **Yes** (Windows UI Automation `IsPassword`) | Varies by app | No |
+| Keeps rich clipboard data on `Ctrl+Alt+Z`? | **Yes** (all `HGLOBAL` formats byte-for-byte) | Often plain text only | Overwrites clipboard |
+| Memory and disk size | **`< 3 MB` RAM / `666 KB` single `.exe`** | 20 to 40 MB RAM | Requires scripting runtime |
+| Source code & network policy | **MIT open source** (RAM-only, zero network APIs) | Usually closed-source | Varies |
 
 ## Tested Across 20 Languages and 45 Windows Keyboard Drivers
 

@@ -9,7 +9,7 @@ rust-version = "1.75"
 readme = "README.md"
 homepage = "https://vkvstudio.com"
 repository = "https://github.com/vkvstudio/SmartBlink"
-keywords = ["windows", "keyboard", "layout-switcher", "punto-switcher", "tray-utility"]
+keywords = ["windows", "keyboard", "layout-switcher", "input-utility", "tray-utility"]
 categories = ["os::windows-apis", "command-line-utilities", "internationalization"]
 build = "build.rs"
 
