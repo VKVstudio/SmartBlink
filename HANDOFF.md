@@ -366,3 +366,43 @@ All 12 milestones (M1–M12) are complete. Await owner desktop verification and 
 - `cargo test --release` -> `46 passed; 0 failed` (`0.40s`).
 - `cargo build --release` -> 0 warnings (`smartblink.exe`, `612,352` bytes).
 - `ISCC.exe installer\SmartBlink.iss` -> `target\installer\SmartBlink-Setup-1.0.0.exe` (`2,327,059` bytes) + `target\installer\SHA256SUMS.txt`.
+
+## Session #024 — 2026-10-28 — Deep 20-Language / 45-DLL (`KBD*.DLL`) Binary Research & M13 Implementation Plan
+
+**Owner Decision**
+- Halted premature release push (`"ты до релиза успокойся. зачем выкладывать заведомо брак? ... для начала нужен ресерч по всем раскладкам которые мы используем, все нбансы надо вычислить ... записать в системные что ты нашел, потом составить план реализации"`).
+
+**Done**
+- Committed previous staged state as `940b907`.
+- Extracted and inspected the binary `KbdLayerDescriptor` (`KBDTABLES`) tables of all **45 official Windows 11 `C:\Windows\System32\KBD*.DLL` layout drivers** across all 20 built-in primary languages (`EN, RU, UK, BE, KK, DE, FR, ES, PT, IT, TR, PL, NL, SV, CS, EL, HE, AR, HY, KA`), covering every scan code `0x01..=0x56`, `Shift`/`AltGr`/`Shift+AltGr`/`SGCAPS` (`CapsLock`) layers, `WCH_LGTR` multi-char ligatures, and all 893 `WCH_DEAD` dead-key compositions.
+- Recorded the complete per-language/per-DLL technical findings and the 10 uncovered root-cause bugs in `.system/layouts_research.md`, and updated `.system/checkpoint.md` with the 5-step **Milestone M13 (Deep 20-Layout & 45-KBD Engine Overhaul)** plan.
+
+**Next agent**
+- Wait for owner approval of the M13 Implementation Plan in `.system/layouts_research.md` §4 / `.system/checkpoint.md`, then execute Steps 1–5 in order.
+
+## Session #025 — 2026-10-28 — Milestone M13 Implementation (Deep 20-Layout & 45-KBD Engine Overhaul)
+
+**Done**
+- Executed all 5 steps of Milestone M13 per `.system/layouts_research.md` §4:
+  - **Step 1 & Step 2 (`src/layout.rs`, `src/clipboard.rs`, `src/fix.rs`):**
+    - Implemented `combine_dead_key_for_lang(primary_lang, dead, base)` covering all 17 dead-key families from the 45 Windows 11 `KBD*.DLL` `pDeadKey` tables (`´`, `` ` ``, `^`, `¨`, `~` with Polish `LANG_POLISH` `ą/ć/ę/ł/ń/ó/ś/ź/ż`, `ˇ`, `°`, `¸`, `˘`, `˙/·`, `˛`, `˝`, and Greek `΅ -> ΐ/ΰ`).
+    - Added `SGCAPS` (`CapsLock != Shift`) uppercase fallback in `find_char_ext` and reverse dead-key decomposition (`find_dead_key_sequence`, `can_produce_char`).
+    - Added `is_target_script_letter`, `lookup_for_target`, `translation_for_target`, `render_keys_for_target`, and `render_keys_raw` to `LayoutLayerTable` to normalize `Shift` on unicameral target scripts (`KA`, `HE`, `AR`) when `Shift` produces `None` (`KA-QWERTY`), ASCII Latin (`HE`, `KA-MES`), or punctuation/combining marks (`AR`) while preserving genuine `Shift` letters (`ჭ, ღ, თ, შ, ჟ, ძ, ჩ` in `KA-QWERTY` and `أ, إ, آ, لأ, لإ, لآ` in `AR`).
+    - Upgraded `convert_str_to` (`Ctrl+Alt+Z`) to compose/decompose 2-key dead-key sequences (`"qu'e" <-> "qué"`), 2-char Arabic ligatures (`"b" <-> "لا"`, `"G" <-> "لأ"`), and unicameral<->bicameral `Shift` normalization.
+    - Updated `plan_word_fix` and `expand_erroneous_burst_run` (`src/fix.rs`) to use `render_keys_raw` and `render_keys_for_target` so `backspace_count` matches exact committed window characters even when `current_table` dropped a `Shift` key (`KA-QWERTY`) or ended on an unresolved dead key (`"этих"` on `FR` AZERTY, `"працює"` on `ES`).
+  - **Step 3 (`src/worker.rs`, `src/profile.rs`):**
+    - Relaxed keystroke-count gate from `3` to `2` while requiring `>= 3` rendered target alphabetic characters, unlocking 2-keystroke / 3–4-char Arabic `WCH_LGTR` ligature words (`بلا`, `لأن`, `إلا`, `ولا`).
+    - Fixed `is_bicameral` (`matches!(self.script, 1 | 2 | 3 | 7)`) so Arabic mid-word `Shift` hamza/madda (`مسألة`, `الآن`) is never penalized as camelCase while Greek (`7`) gets proper bicameral checks.
+    - Added vocalization stripping for `LANG_ARABIC` and `LANG_HEBREW`, replaced blind apostrophe/backtick stripping with `strip_valid_internal_apostrophe_or_hyphen` (keeping wrong-layout dead keys like `"qu'e"` and `"est'a"` as `OOV_IDX` in English), allowed internal apostrophes/hyphens in `is_pure_alphabetic_candidate` (`"c'est"`, `"peut-être"`, `"п'ять"`), allowed Czech syllabic `'r'`/`'l'` words (`"čtvrt"`) and 5–6-consonant clusters in `KA`/`CS`/`PL`/`DE` (`"გთხოვთ"`), and rejected candidate tables that drop mid-word keys (`"GitHub"` on `US` vs `KA-QWERTY`).
+  - **Step 4 (`tools/profilegen/src/corpora.rs`, `tools/profilegen/src/main.rs`, `assets/profiles/*.bin`):**
+    - Expanded all 18 non-EN/RU corpora (`UK, BE, KK, DE, FR, ES, PT, IT, TR, PL, NL, SV, CS, EL, HE, AR, HY, KA`) to ~350–450 high-frequency words each, added Dutch accented/trema vowels (`áéèêëïóöü`) and Arabic `ةهءؤئ` vowel carriers, and regenerated all 20 `assets/profiles/*.bin` files (`131,356` bytes total; 900–1380 trigrams per language).
+  - **Step 5 (`src/layout.rs`, `src/profile.rs`, `src/fix.rs`):**
+    - Added `m13_dead_keys_ligatures_sgcaps_and_unicameral_shift_suite` (`src/layout.rs`), `m13_twenty_language_and_45_kbd_variant_regression_suite` (`src/profile.rs`), and `KA-QWERTY` / `FR` trailing-dead-key backspace-accounting tests (`src/fix.rs`).
+
+**Verified**
+- `cargo test --release` -> `48 passed; 0 failed` (`0.45s`).
+- `cargo build --release` -> 0 warnings (`smartblink.exe`, `682,496` bytes).
+- `ISCC.exe installer\SmartBlink.iss` -> `target\installer\SmartBlink-Setup-1.0.0.exe` + `target\installer\SHA256SUMS.txt`.
+
+**Next agent**
+- Await owner live verification or explicit approval before `git push` / GitHub release.

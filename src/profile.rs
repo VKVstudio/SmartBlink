@@ -215,8 +215,8 @@ impl LanguageProfile {
         }
 
         // Count mid-word lowercase -> uppercase transitions for bicameral scripts
-        // (catches Georgian unicameral Shift-letters like "dRes" / "gTxovT" typed on EN layout).
-        let is_bicameral = matches!(self.script, 1 | 2 | 3 | 6);
+        // (catches Georgian/Arabic unicameral Shift-letters like "dRes" / "lsHgm" typed on EN layout).
+        let is_bicameral = matches!(self.script, 1 | 2 | 3 | 7);
         let mut mid_word_caps_transitions = 0usize;
         if is_bicameral {
             let mut prev_lower = false;
@@ -300,10 +300,18 @@ impl LanguageProfile {
             }
         }
 
-        // Remove internal apostrophes when not part of this alphabet (e.g. English "don't", "I'm", Ukrainian "п'ять"),
-        // while keeping them if they ARE letters in the target alphabet (e.g. 'э' in RU was already mapped).
-        if self.char_index('\'').is_none() && chars.len() >= 2 {
-            chars.retain(|&c| !matches!(c, '\'' | '’' | 'ʼ' | '`'));
+        // Strip vocalization / combining diacritics (Arabic tashkeel U+064B..U+0655, Hebrew nikud U+0591..U+05C7)
+        // ONLY when scoring Arabic or Hebrew so vocalized words score cleanly while wrong-layout combining marks stay OOV.
+        if self.primary_lang == LANG_ARABIC {
+            chars.retain(|&c| !(('\u{064B}'..='\u{0655}').contains(&c) || c == '\u{0670}' || c == '\u{0640}'));
+        } else if self.primary_lang == LANG_HEBREW {
+            chars.retain(|&c| !('\u{0591}'..='\u{05C7}').contains(&c));
+        }
+
+        // Allow at most ONE orthographic internal apostrophe (`'`, `’`, `ʼ`) or hyphen (`-`) strictly between letters,
+        // and never strip backtick `` ` `` (which is a dead key / letter key on non-US layouts).
+        if self.char_index('\'').is_none() && chars.len() >= 3 {
+            strip_valid_internal_apostrophe_or_hyphen(&mut chars, self.primary_lang);
         }
 
         let n = chars.len();
@@ -392,8 +400,13 @@ impl LanguageProfile {
         }
         if vowel_count == 0 {
             // Hebrew (0x0D) and Arabic (0x01) are abjads where short vowels are omitted in standard orthography.
+            // Czech (0x05) has genuine vowel-less words with syllabic 'r' or 'l' (čtvrt, smrt, prst, vlk, krk, trh).
             let is_abjad = matches!(self.primary_lang, LANG_HEBREW | LANG_ARABIC);
-            if !is_abjad {
+            let is_czech_syllabic = self.primary_lang == LANG_CZECH
+                && chars[..cap].iter().any(|&c| c == 'r' || c == 'l')
+                && cap >= 3
+                && self.lookup_trigram(0, indices[1], indices[2]) > 0;
+            if !is_abjad && !is_czech_syllabic {
                 if cap >= 3 {
                     // A 3+ letter alphabetic word with zero vowels (e.g. "ghbdtn", "rfr", "xnj") is strongly implausible.
                     total -= (cap as i32) * 42;
@@ -403,13 +416,23 @@ impl LanguageProfile {
                     // Single consonant that is not a standalone 1-letter word in this language (e.g. "b", "d", "z" in EN).
                     total -= 65;
                 }
-            } else if cap >= 5 {
-                // Even in unvocalized Hebrew/Arabic, 5+ letters without any mater lectionis (א, ה, ו, י / ا, و, ي, ى) is rare.
-                total -= ((cap - 4) as i32) * 25;
+            } else if is_abjad && cap >= 7 {
+                // Even in unvocalized Hebrew/Arabic, 7+ letters without any mater lectionis or vowel carrier is rare.
+                total -= ((cap - 6) as i32) * 25;
             }
         }
-        if max_consonant_run >= 5 && !matches!(self.primary_lang, LANG_HEBREW | LANG_ARABIC) {
-            total -= ((max_consonant_run - 4) as i32) * 55;
+        let consonant_run_limit = if matches!(
+            self.primary_lang,
+            LANG_GEORGIAN | LANG_CZECH | LANG_POLISH | LANG_GERMAN
+        ) {
+            7
+        } else {
+            5
+        };
+        if max_consonant_run >= consonant_run_limit
+            && !matches!(self.primary_lang, LANG_HEBREW | LANG_ARABIC)
+        {
+            total -= ((max_consonant_run + 1 - consonant_run_limit) as i32) * 55;
         }
         // French, Dutch, and German frequently have 3-vowel sequences (-eau, -ieux, nieuw, mooie, Feuer, teuer).
         let vowel_run_limit = if matches!(self.primary_lang, LANG_FRENCH | LANG_DUTCH | LANG_GERMAN)
@@ -433,6 +456,74 @@ impl LanguageProfile {
 #[inline]
 fn is_leading_quote_or_bracket(ch: char) -> bool {
     matches!(ch, '"' | '\'' | '«' | '(' | '[')
+}
+
+/// Strip at most one valid orthographic internal apostrophe (`'`, `’`, `ʼ`) or hyphen (`-`)
+/// without masking wrong-layout dead keys (`"qu'e"`, `"est'a"`, `"tamb'em"`, `"d`eja"`).
+fn strip_valid_internal_apostrophe_or_hyphen(chars: &mut Vec<char>, primary_lang: u16) {
+    let len = chars.len();
+    if len < 3 {
+        return;
+    }
+    // 1. Check for a single internal hyphen strictly between alphabetic characters (e.g. "peut-être", "кто-то"):
+    let hyphen_count = chars.iter().filter(|&&c| c == '-').count();
+    if hyphen_count == 1 {
+        if let Some(pos) = chars.iter().position(|&c| c == '-') {
+            if pos >= 1
+                && pos + 1 < chars.len()
+                && chars[pos - 1].is_alphabetic()
+                && chars[pos + 1].is_alphabetic()
+            {
+                chars.remove(pos);
+            }
+        }
+    }
+
+    // 2. Check for a single internal apostrophe in languages that use orthographic internal apostrophes:
+    if !matches!(
+        primary_lang,
+        LANG_ENGLISH
+            | LANG_FRENCH
+            | LANG_ITALIAN
+            | LANG_UKRAINIAN
+            | LANG_BELARUSIAN
+            | LANG_DUTCH
+            | LANG_TURKISH
+            | LANG_HEBREW
+    ) {
+        return;
+    }
+
+    let apo_count = chars
+        .iter()
+        .filter(|&&c| matches!(c, '\'' | '’' | 'ʼ'))
+        .count();
+    if apo_count != 1 {
+        return;
+    }
+    let Some(pos) = chars.iter().position(|&c| matches!(c, '\'' | '’' | 'ʼ')) else {
+        return;
+    };
+    if pos == 0 || pos + 1 >= chars.len() {
+        return;
+    }
+    if !chars[pos - 1].is_alphabetic() || !chars[pos + 1].is_alphabetic() {
+        return;
+    }
+
+    if primary_lang == LANG_ENGLISH {
+        // In English, internal `'` only occurs before contraction/possessive suffixes (`t`, `s`, `d`, `m`, `ve`, `re`, `ll`, `clock`),
+        // NEVER before a single vowel as in Spanish/Portuguese/Italian dead-key sequences (`"qu'e"`, `"est'a"`, `"tamb'em"`, `"n'ao"`).
+        let suffix: String = chars[pos + 1..].iter().collect();
+        if matches!(
+            suffix.as_str(),
+            "t" | "s" | "d" | "m" | "ve" | "re" | "ll" | "clock"
+        ) {
+            chars.remove(pos);
+        }
+    } else {
+        chars.remove(pos);
+    }
 }
 
 #[inline]
@@ -484,21 +575,40 @@ pub fn profile_for_primary_lang(primary_lang: u16) -> Option<&'static LanguagePr
         .find(|p| p.primary_lang == primary_lang)
 }
 
-/// Check whether `rendered` is a clean alphabetic word (allowing trailing sentence punctuation).
+/// Check whether `rendered` is a clean alphabetic word (allowing trailing sentence punctuation
+/// and at most one internal apostrophe or hyphen strictly between letters, e.g. `"c'est"`, `"п'ять"`, `"peut-être"`).
 fn is_pure_alphabetic_candidate(rendered: &str) -> bool {
     let trimmed = rendered.trim();
     let core = trimmed.trim_end_matches(is_sentence_punct);
-    let mut count = 0usize;
-    for ch in core.chars() {
-        if ch.is_alphabetic() || matches!(ch, '\'' | '’' | 'ʼ') {
+    let core_chars: Vec<char> = core.chars().collect();
+    if core_chars.is_empty() {
+        return false;
+    }
+    let mut alpha_count = 0usize;
+    let mut sep_count = 0usize;
+    for (i, &ch) in core_chars.iter().enumerate() {
+        if ch.is_alphabetic() || ('\u{064B}'..='\u{0655}').contains(&ch) || c_is_hebrew_nikud(ch) {
             if ch.is_alphabetic() {
-                count += 1;
+                alpha_count += 1;
+            }
+        } else if matches!(ch, '\'' | '’' | 'ʼ' | '-') {
+            sep_count += 1;
+            if sep_count > 1 || i == 0 || i + 1 >= core_chars.len() {
+                return false;
+            }
+            if !core_chars[i - 1].is_alphabetic() || !core_chars[i + 1].is_alphabetic() {
+                return false;
             }
         } else {
             return false;
         }
     }
-    count >= MIN_WORD_LEN
+    alpha_count >= MIN_WORD_LEN
+}
+
+#[inline]
+fn c_is_hebrew_nikud(ch: char) -> bool {
+    ('\u{0591}'..='\u{05C7}').contains(&ch)
 }
 
 /// Evaluate a slice of keystroke slots against pre-built `LayoutLayerTable`s.
@@ -507,7 +617,9 @@ pub fn evaluate_tables(
     current_hkl: HKL,
     tables: &[&LayoutLayerTable],
 ) -> Option<DetectionVerdict> {
-    if word_keys.len() < MIN_WORD_LEN || tables.len() < 2 {
+    // Allow 2-keystroke words into evaluation so 2-key / 3-char Arabic ligature words (`بلا`, `لأن`, `إلا`, `ولا`)
+    // can reach `target_alpha_len >= MIN_WORD_LEN (3)`.
+    if word_keys.len() < 2 || tables.len() < 2 {
         return None;
     }
 
@@ -521,18 +633,34 @@ pub fn evaluate_tables(
             tables.iter().copied().find(|t| t.primary_lang == cur_lang)
         })?;
 
-    let current_rendered = current_table.render_keys(word_keys)?;
+    let (mut current_rendered, current_trailing_dead) =
+        current_table.render_keys_raw(word_keys, false);
+    let current_profile = profile_for_primary_lang(current_table.primary_lang)?;
+    if let Some(d) = current_trailing_dead {
+        // If the last keystroke is a dead key in `current_table` (e.g. `0x1A` `[` on FR/ES when typing Russian `"этих"`,
+        // or `0x28` `'` on ES/PT/NL when typing Ukrainian `"працює"`), only evaluate if the stem before the dead key
+        // is already implausible in `current_table` (so we never interrupt genuine dead-key typing like Spanish `"caf´"`).
+        if !current_rendered.is_empty() && current_profile.score_word(&current_rendered) > -15 {
+            return None;
+        }
+        current_rendered.push(d);
+    }
+    if current_rendered.is_empty() {
+        return None;
+    }
+
     if layout::is_unconditionally_immune_token(&current_rendered) {
         return None;
     }
     if is_immune_word(&current_rendered) {
-        // On French AZERTY (é=2, è=7, ç=9, à=0), Czech QWERTZ (ě=2..é=0), Kazakh (ә=2..һ=0),
-        // Armenian (1..=), Italian (ù=\), and Hebrew (/=q), top-row or slash keys produce digits
-        // or slashes in US QWERTY. Allow scoring ONLY if at least one candidate layout renders
-        // these exact keystrokes into a purely alphabetic word!
+        // On French AZERTY (é=2, '=4, -=6, è=7, _=8, ç=9, à=0), Czech (ě=2..é=0), Kazakh (ә=2..һ=0),
+        // Armenian (1..=, /=պ, \=շ), Ukrainian (\=ґ), Arabic 102 (\=ذ, Shift+A=\), Polish 214 (\=ó/ź),
+        // Italian (\=ù), Georgian MES (/=ძ), and Hebrew (/=q), top-row or slash/backslash keys produce
+        // digits or slashes in US QWERTY. Allow scoring ONLY if at least one candidate layout renders
+        // these exact keystrokes into a valid word!
         let has_pure_alpha_candidate = tables.iter().any(|&t| {
             t.hkl != current_table.hkl
-                && t.render_keys(word_keys)
+                && t.render_keys_for_target(word_keys)
                     .map(|r| is_pure_alphabetic_candidate(&r))
                     .unwrap_or(false)
         });
@@ -541,7 +669,6 @@ pub fn evaluate_tables(
         }
     }
 
-    let current_profile = profile_for_primary_lang(current_table.primary_lang)?;
     let current_score = current_profile.score_word(&current_rendered);
 
     let mut best_hkl = current_table.hkl;
@@ -557,7 +684,16 @@ pub fn evaluate_tables(
         let Some(profile) = profile_for_primary_lang(table.primary_lang) else {
             continue;
         };
-        let Some(rendered) = table.render_keys(word_keys) else {
+        // Never allow a candidate layout to win by dropping mid-word keystrokes (e.g. camelCase "GitHub" on KA-QWERTY where Shift+H is None).
+        let drops_mid_word_key = word_keys.iter().skip(1).any(|k| {
+            k.vk != 0x20
+                && table.lookup_for_target(k) == layout::ScanTranslation::None
+                && current_table.lookup(k) != layout::ScanTranslation::None
+        });
+        if drops_mid_word_key {
+            continue;
+        }
+        let Some(rendered) = table.render_keys_for_target(word_keys) else {
             continue;
         };
         let score = profile.score_word(&rendered);
@@ -1232,5 +1368,252 @@ mod tests {
             .expect("KA 'დღეს' ('dRes' in US) must be detected");
         assert_eq!(v_ka.target_hkl, KA_HKL);
         assert_eq!(v_ka.rendered_target, "დღეს");
+    }
+
+    #[test]
+    fn m13_twenty_language_and_45_kbd_variant_regression_suite() {
+        const US_HKL: HKL = HKL(0x04090409 as _);
+        const RU_HKL: HKL = HKL(0x04190419 as _);
+        const UK_HKL: HKL = HKL(0x04220422 as _);
+        const FR_HKL: HKL = HKL(0x040C040C as _);
+        const ES_HKL: HKL = HKL(0x040A040A as _);
+        const CS_HKL: HKL = HKL(0x04050405 as _);
+        const AR_HKL: HKL = HKL(0x04010401 as _);
+        const HE_HKL: HKL = HKL(0x040D040D as _);
+        const KA_HKL: HKL = HKL(0x04370437 as _);
+
+        let mut us_full = US_LAYOUT.to_vec();
+        us_full.extend_from_slice(&[
+            (0x03, '2', '@'),
+            (0x04, '3', '#'),
+            (0x05, '4', '$'),
+            (0x06, '5', '%'),
+            (0x07, '6', '^'),
+            (0x08, '7', '&'),
+            (0x09, '8', '*'),
+            (0x0B, '0', ')'),
+            (0x2B, '\\', '|'),
+        ]);
+        let us = LayoutLayerTable::from_pairs(US_HKL, &us_full);
+        let ru = LayoutLayerTable::from_pairs(RU_HKL, RU_LAYOUT);
+
+        // 1. Arabic (kbd101.dll & kbd102.dll):
+        //    - 2-keystroke / 3-letter ligature word "بلا" ('f'=0x21 -> 'ب', 'b'=0x30 -> 'لا')
+        //    - Mid-word Shift hamza "مسألة" ('H'=Shift+0x23 -> 'أ')
+        //    - AR-102 'ذ' on '\' (0x2B) -> "هذا" ('i'=0x17='ه', '\'=0x2B='ذ', 'h'=0x23='ا')
+        let ar_pairs: &[(u8, char, char)] = &[
+            (0x17, 'ه', '÷'),
+            (0x2B, 'ذ', 'ّ'),
+            (0x23, 'ا', 'أ'),
+            (0x21, 'ب', '['),
+            (0x26, 'م', '/'),
+            (0x1F, 'س', 'ٍ'),
+            (0x22, 'ل', 'ل'),
+            (0x32, 'ة', '\''),
+            (0x1E, 'ش', '\\'), // AR-102 Shift+A = '\'
+            (0x24, 'ت', 'ـ'),
+            (0x25, 'ن', '،'),
+        ];
+        let ar = LayoutLayerTable::from_pairs(AR_HKL, ar_pairs)
+            .with_ligature(0x30, false, 'ل', 'ا')
+            .with_ligature(0x22, true, 'ل', 'أ');
+
+        let bila_keys = [
+            KeyStrokeSlot {
+                vk: 0,
+                scan_code: 0x21,
+                flags: 0,
+                ms_tick: 100,
+                shift: false,
+                altgr: false,
+            },
+            KeyStrokeSlot {
+                vk: 0,
+                scan_code: 0x30,
+                flags: 0,
+                ms_tick: 120,
+                shift: false,
+                altgr: false,
+            },
+        ];
+        assert_eq!(us.render_keys(&bila_keys).as_deref(), Some("fb"));
+        assert_eq!(ar.render_keys(&bila_keys).as_deref(), Some("بلا"));
+        let v_bila = evaluate_tables(&bila_keys, US_HKL, &[&us, &ar])
+            .expect("2-keystroke 3-letter Arabic ligature word 'بلا' ('fb' on US) must be detected");
+        assert_eq!(v_bila.target_hkl, AR_HKL);
+        assert_eq!(v_bila.rendered_target, "بلا");
+
+        let masala_keys = type_on_layout("مسألة", ar_pairs);
+        assert_eq!(us.render_keys(&masala_keys).as_deref(), Some("lsHgm"));
+        let v_masala = evaluate_tables(&masala_keys, US_HKL, &[&us, &ar])
+            .expect("Arabic 'مسألة' with mid-word Shift hamza ('lsHgm' on US) must be detected");
+        assert_eq!(v_masala.target_hkl, AR_HKL);
+        assert_eq!(v_masala.rendered_target, "مسألة");
+
+        let hadha_keys = type_on_layout("هذا", ar_pairs);
+        assert_eq!(us.render_keys(&hadha_keys).as_deref(), Some(r"i\h"));
+        let v_hadha = evaluate_tables(&hadha_keys, US_HKL, &[&us, &ar])
+            .expect(r"AR-102 'هذا' ('i\h' on US with 'ذ' on '\') must be detected");
+        assert_eq!(v_hadha.target_hkl, AR_HKL);
+        assert_eq!(v_hadha.rendered_target, "هذا");
+
+        // 2. Hebrew (kbdheb.dll): Capitalized "Hello" typed on HE produces "Hקךךם" (Shift+H='H'):
+        let he_pairs: &[(u8, char, char)] = &[
+            (0x23, 'י', 'H'),
+            (0x12, 'ק', 'E'),
+            (0x25, 'ל', 'K'),
+            (0x26, 'ך', 'L'),
+            (0x18, 'ם', 'O'),
+            (0x1E, 'ש', 'A'),
+            (0x16, 'ו', 'U'),
+        ];
+        let he = LayoutLayerTable::from_pairs(HE_HKL, he_pairs);
+        let hello_keys = type_on_layout("Hello", &us_full);
+        assert_eq!(he.render_keys(&hello_keys).as_deref(), Some("Hקךךם"));
+        let v_he_hello = evaluate_tables(&hello_keys, HE_HKL, &[&he, &us])
+            .expect("Capitalized 'Hello' typed on HE ('Hקךךם') must be detected as EN");
+        assert_eq!(v_he_hello.target_hkl, US_HKL);
+        assert_eq!(v_he_hello.rendered_target, "Hello");
+
+        // 3. Georgian (kbdgeoqw.dll & kbdgeome.dll):
+        //    - Capitalized "Hello" typed on KA-QWERTY drops Shift+H ('ჰ' has shift=None -> "ელლო")
+        //    - Capitalized "Gamarjoba" typed on US normalizes Shift+G -> "გამარჯობა"
+        //    - CamelCase "GitHub" typed on US stays immune (KA-QWERTY drops mid-word Shift+H)
+        //    - "გთხოვთ" (5 consecutive consonants + Shift+T='თ') detected as KA
+        let ka_qw = LayoutLayerTable::from_pairs(
+            KA_HKL,
+            &[
+                (0x23, 'ჰ', '\0'),
+                (0x12, 'ე', '\0'),
+                (0x26, 'ლ', '\0'),
+                (0x18, 'ო', '\0'),
+                (0x22, 'გ', '\0'),
+                (0x1E, 'ა', '\0'),
+                (0x32, 'მ', '\0'),
+                (0x13, 'რ', 'ღ'),
+                (0x24, 'ჯ', 'ჟ'),
+                (0x30, 'ბ', '\0'),
+                (0x14, 'ტ', 'თ'),
+                (0x2D, 'ხ', '\0'),
+                (0x2F, 'ვ', '\0'),
+                (0x17, 'ი', '\0'),
+                (0x16, 'უ', '\0'),
+            ],
+        );
+        assert_eq!(
+            ka_qw.render_keys_raw(&hello_keys, false),
+            ("ელლო".to_string(), None)
+        );
+        let v_ka_hello = evaluate_tables(&hello_keys, KA_HKL, &[&ka_qw, &us])
+            .expect("Capitalized 'Hello' typed on KA-QWERTY ('ელლო') must be detected as EN");
+        assert_eq!(v_ka_hello.target_hkl, US_HKL);
+        assert_eq!(v_ka_hello.rendered_target, "Hello");
+
+        let gamarjoba_keys = type_on_layout("Gamarjoba", &us_full);
+        let v_gamarjoba = evaluate_tables(&gamarjoba_keys, US_HKL, &[&us, &ka_qw])
+            .expect("Capitalized 'Gamarjoba' typed on US must normalize Shift+G and detect KA");
+        assert_eq!(v_gamarjoba.target_hkl, KA_HKL);
+        assert_eq!(v_gamarjoba.rendered_target, "გამარჯობა");
+
+        let github_keys = type_on_layout("GitHub", &us_full);
+        assert!(
+            evaluate_tables(&github_keys, US_HKL, &[&us, &ka_qw]).is_none(),
+            "CamelCase 'GitHub' on US must not false-positive to KA-QWERTY when mid-word Shift+H is dropped"
+        );
+
+        let gtkhovt_keys = type_on_layout("gTxovT", &us_full);
+        let v_gtkhovt = evaluate_tables(&gtkhovt_keys, US_HKL, &[&us, &ka_qw])
+            .expect("Georgian 'გთხოვთ' ('gTxovT' on US) with 5 consonants must be detected");
+        assert_eq!(v_gtkhovt.target_hkl, KA_HKL);
+        assert_eq!(v_gtkhovt.rendered_target, "გთხოვთ");
+
+        // 4. Russian word ending on a dead key when active layout is French AZERTY ("этих" -> 'х' is 0x1A = dead '^'):
+        let fr_azerty = LayoutLayerTable::from_pairs(
+            FR_HKL,
+            &[
+                (0x05, '\'', '4'),
+                (0x12, 'e', 'E'),
+                (0x14, 't', 'T'),
+                (0x1F, 's', 'S'),
+                (0x2E, 'c', 'C'),
+                (0x28, 'ù', '%'),
+                (0x30, 'b', 'B'),
+                (0x31, 'n', 'N'),
+            ],
+        )
+        .with_dead_key(0x1A, false, '^');
+
+        let etikh_keys = type_on_layout("этих", RU_LAYOUT);
+        assert_eq!(fr_azerty.render_keys(&etikh_keys), None); // dead key '^' unresolved at end!
+        assert_eq!(
+            fr_azerty.render_keys_raw(&etikh_keys, false),
+            ("ùnb".to_string(), Some('^'))
+        );
+        let v_etikh = evaluate_tables(&etikh_keys, FR_HKL, &[&fr_azerty, &ru])
+            .expect("RU 'этих' typed on FR AZERTY (ending on dead key 0x1A '^') must be detected");
+        assert_eq!(v_etikh.target_hkl, RU_HKL);
+        assert_eq!(v_etikh.rendered_target, "этих");
+
+        // 5. French contraction "c'est" ('=4 on 0x05) typed on US ("c4est"):
+        let cest_keys = type_on_layout("c'est", &[
+            (0x2E, 'c', 'C'),
+            (0x05, '\'', '4'),
+            (0x12, 'e', 'E'),
+            (0x1F, 's', 'S'),
+            (0x14, 't', 'T'),
+        ]);
+        assert_eq!(us.render_keys(&cest_keys).as_deref(), Some("c4est"));
+        let v_cest = evaluate_tables(&cest_keys, US_HKL, &[&us, &fr_azerty])
+            .expect("FR \"c'est\" ('c4est' on US) must be detected");
+        assert_eq!(v_cest.target_hkl, FR_HKL);
+        assert_eq!(v_cest.rendered_target, "c'est");
+
+        // 6. Spanish dead-key word "está" typed on US ("est'a"):
+        let es = LayoutLayerTable::from_pairs(ES_HKL, &us_full).with_dead_key(0x28, false, '´');
+        let esta_keys = type_on_layout("est'a", &us_full);
+        assert_eq!(es.render_keys(&esta_keys).as_deref(), Some("está"));
+        let v_esta = evaluate_tables(&esta_keys, US_HKL, &[&us, &es])
+            .expect("ES 'está' (\"est'a\" on US) must be detected as ES and not treated as an EN contraction");
+        assert_eq!(v_esta.target_hkl, ES_HKL);
+        assert_eq!(v_esta.rendered_target, "está");
+
+        // 7. Ukrainian internal apostrophe ("п'ять") and Czech syllabic-liquid ("čtvrt"):
+        let mut uk_pairs = RU_LAYOUT.to_vec();
+        for e in &mut uk_pairs {
+            if e.0 == 0x28 {
+                *e = (0x28, 'є', 'Є');
+            }
+        }
+        let uk = LayoutLayerTable::from_pairs(UK_HKL, &uk_pairs);
+        let uk_prof = profile_for_primary_lang(LANG_UKRAINIAN).unwrap();
+        assert!(
+            uk_prof.score_word("п'ять") > 25,
+            "Ukrainian \"п'ять\" must score strongly positive"
+        );
+        let працю_keys = type_on_layout("працює", &uk_pairs);
+        let v_uk_dead = evaluate_tables(&працю_keys, ES_HKL, &[&es, &uk])
+            .expect("UK 'працює' ending on ES dead key 0x28 ('´') must be detected");
+        assert_eq!(v_uk_dead.target_hkl, UK_HKL);
+
+        let cs = LayoutLayerTable::from_pairs(
+            CS_HKL,
+            &[
+                (0x05, 'č', '4'),
+                (0x14, 't', 'T'),
+                (0x2F, 'v', 'V'),
+                (0x13, 'r', 'R'),
+            ],
+        );
+        let ctvrt_keys = type_on_layout("čtvrt", &[
+            (0x05, 'č', '4'),
+            (0x14, 't', 'T'),
+            (0x2F, 'v', 'V'),
+            (0x13, 'r', 'R'),
+        ]);
+        assert_eq!(us.render_keys(&ctvrt_keys).as_deref(), Some("4tvrt"));
+        let v_ctvrt = evaluate_tables(&ctvrt_keys, US_HKL, &[&us, &cs])
+            .expect("Czech syllabic-r word 'čtvrt' ('4tvrt' on US) must be detected");
+        assert_eq!(v_ctvrt.target_hkl, CS_HKL);
+        assert_eq!(v_ctvrt.rendered_target, "čtvrt");
     }
 }

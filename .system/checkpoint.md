@@ -1,6 +1,6 @@
 # Checkpoint — SmartBlink
 
-`Current Phase`: v1.0.0 Production-Ready — Multi-Persona (8 Roles) + 20-Layout Skeptic Audit, Security/Layout/UX Hardening, & GitHub Release Preparation complete (46/46 unit tests green, release binary & Inno Setup 6 installer rebuilt, `SHA256SUMS.txt` updated).
+`Current Phase`: M13 Complete — Deep 20-Language / 45-DLL (`KBD*.DLL`) Engine Overhaul implemented & verified (`48 passed; 0 failed`); ready for live manual check across non-EN/RU layouts or v1.0.0 release approval.
 `Approved Stack`: Rust (`x86_64-pc-windows-gnullvm` via LLVM-MinGW UCRT; MSVC/Windows SDK forbidden), `windows` crate 0.58, Win32 tray + Settings window, hand-rolled flat TOML config in `%APPDATA%\SmartBlink\config.toml`, WASAPI shared audio, Inno Setup 6 installer (per-user default `{autopf}`, optional elevated ONLOGON scheduled task). License MIT. Publisher `VKV Studio` / vkvstudio.com. Min OS: Windows 10 1809. Default fix hotkey: double Left Shift. Default alert mode: Both (audio + LED), LED defaults to Scroll Lock.
 
 ## Completed
@@ -39,14 +39,41 @@
   - Security & UX hardening (`src/hooks.rs`, `src/clipboard.rs`, `src/config.rs`, `src/autostart.rs`, `src/settings.rs`, `src/tray.rs`, `src/main.rs`): wired `SUPPRESS_DEPTH` into `low_level_keyboard_proc`, distinguished `Left Alt` from `AltGr` (`VK_RMENU`) in `SelectionHotkeyDetector` so `AltGr+Z` (Polish `ż`) never triggers selection conversion, added `16 MB`/`32 MB` clipboard snapshot caps and volatile RAM zeroing, capped `config.toml` at `64 KB` / `256` blacklist entries with PID-qualified temp file, used explicit `%SystemRoot%\System32\schtasks.exe` & `notepad.exe` paths, fixed `Sel: Ctrl+Alt+Z` hero badge clipping in `src/settings.rs`, and added second-instance `WM_APP_OPEN_SETTINGS` activation.
   - Embedded `SmartBlink_preview.png`, comparison table, and FAQ in `README.md` & `README.ru.md`, updated `Cargo.toml`, `CHANGELOG.md`, `installer/SmartBlink.iss`, `.github/workflows/release.yml`, and `.gitignore`.
 
+- Deep 20-Language / 45-DLL Binary Research complete (`.system/layouts_research.md`):
+  - Inspected `KbdLayerDescriptor` (`KBDTABLES`) across all 45 official Windows 11 `C:\Windows\System32\KBD*.DLL` layout drivers for the 20 built-in languages (`EN, RU, UK, BE, KK, DE, FR, ES, PT, IT, TR, PL, NL, SV, CS, EL, HE, AR, HY, KA`).
+  - Identified 10 systemic root-cause defects in non-EN/RU layout handling (documented in `.system/layouts_research.md`):
+    1. Corpus poverty in `tools/profilegen/src/corpora.rs` (18 non-EN/RU languages have only 2–4 lines / 55–85 words vs ~450 in EN/RU).
+    2. Keystroke-length gate (`word_keys.len() < 3` in `worker.rs:736` and `profile.rs:510`) rejecting 2-keystroke / 3–4-char Arabic `WCH_LGTR` ligature words (`بلا`, `لأن`, `إلا`, `ألا`, `ولا`, `كلا`, `هلا`, `علا`).
+    3. Bicameral script typo in `src/profile.rs:219` (`matches!(self.script, 1 | 2 | 3 | 6)` includes unicameral `6 = SCRIPT_ARABIC` instead of bicameral `7 = SCRIPT_GREEK`).
+    4. Unicameral `Shift` layer traps (`KA-QWERTY` `kbdgeoqw.dll` returns `WCH_NONE` on 19 shifted letter keys; `HE` and `KA-MES` return uppercase ASCII `A..Z` on `Shift+letter`; `AR` returns punctuation/math/combining marks or `\` on `AR-102` `Shift+A`), breaking capitalized word conversion & replay.
+    5. Unconditional file-path/symbol immunity (`is_immune_token` / `is_immune_word` on `\`, `/`, `@`, `_`) blocking ordinary letters on `0x2B`, `0x56`, `0x35`, `0x29`, `0x09` (`AR-102` `ذ` on `\`, `UK` `ґ` on `0x56` `\`, `PL-214` `ó/ź` on `\`, `IT` `ù` on `\`, `HY` `պ/բ` on `/` and `շ` on `\`, `KA-MES` `ძ` on `/`, `FR` `_`/`@`, `NL` `@`, `ES` `ç` on `\`, `TR-F` `x` on `\`).
+    6. Top-row digit check (`worker.rs:647–660`) requiring `chars().all(|c| c.is_alphabetic())`, which rejects French/Ukrainian/Belarusian contractions (`"c'est"` -> `"c4est"`, `"d'un"` -> `"d4un"`, `"п'ять"`).
+    7. Incomplete & language-blind static `combine_dead_key` (~75 hardcoded pairs vs 893 Windows 11 `KBD*.DLL` dead-key pairs; Polish `~`+`a` -> `ą` vs Portuguese `ã`; Greek `΅`+`ι/υ` -> `ΐ/ΰ` bug).
+    8. `convert_str_to` (`Ctrl+Alt+Z`) inability to compose/decompose 2-key dead-key sequences (`"qu'e" <-> "qué"`, `";a" <-> "ά"`) or 2-char Arabic ligatures (`"b" <-> "لا"`).
+    9. `score_word` internal apostrophe/backtick stripping (`src/profile.rs:305`) masking wrong-layout dead keys (`"qu'e"` -> `"que"`, `"est'a"` -> `"esta"`, `"d`eja"` -> `"deja"`).
+    10. `SGCAPS` (`CapsLock` != `Shift`) ignored in `LayoutLayerTable::build` (`CS` `Ě..É/Ú/Ů`, `DE-CH`/`FR-CH` `Ü/Ö/Ä/È/É/À`).
+
+- M13 complete (Deep 20-Layout & 45-KBD Engine Overhaul per `.system/layouts_research.md` §4):
+  - `src/layout.rs` & `src/clipboard.rs` & `src/fix.rs`:
+    - Implemented `combine_dead_key_for_lang(primary_lang, dead, base)` covering all 17 dead-key accent families from the 45 Windows 11 `KBD*.DLL` `pDeadKey` tables (including Polish `~` -> `ą/ć/ę/ł/ń/ó/ś/ź/ż`, language-aware `´+c` -> `ć` vs `ç`, Greek dialytika+tonos `΅` -> `ΐ/ΰ`, caron `ˇ`, ring `°`, cedilla `¸`, breve `˘`, dot above `˙/·`, ogonek `˛`, double acute `˝`).
+    - Added `SGCAPS` (`CapsLock != Shift`) uppercase-to-lowercase fallback in `find_char_ext` (for Czech `Č/Ř/Š/Ž/Ě/Ú/Ů`, Swiss `Ü/Ö/Ä`, Italian `È/Ò/À/Ù/Ì`) and reverse dead-key decomposition (`find_dead_key_sequence`, `can_produce_char`).
+    - Added `is_target_script_letter`, `lookup_for_target`, `translation_for_target`, `render_keys_for_target`, and `render_keys_raw` to `LayoutLayerTable`, normalizing `Shift` on unicameral scripts (`KA`, `HE`, `AR`) when `Shift` maps to `None` (`KA-QWERTY`), ASCII Latin (`HE`, `KA-MES`), or punctuation/combining marks (`AR`) while preserving genuine `Shift` letters (`ჭ, ღ, თ, შ, ჟ, ძ, ჩ` in `KA-QWERTY` and `أ, إ, آ, لأ, لإ, لآ` in `AR`).
+    - Upgraded `convert_str_to` (`Ctrl+Alt+Z`) to compose/decompose 2-key dead-key sequences (`"qu'e" <-> "qué"`, `"kalhm;era" <-> "καλημέρα"`), 2-char Arabic ligatures (`"b" <-> "لا"`, `"G" <-> "لأ"`), and unicameral<->bicameral `Shift` normalization.
+    - Updated `plan_word_fix` and `expand_erroneous_burst_run` (`src/fix.rs`) to use `render_keys_raw` and `render_keys_for_target` so `backspace_count` matches exact committed window characters even when `current_table` dropped a `Shift` key (`KA-QWERTY`) or ended on a pending dead key (`"этих"` on `FR` AZERTY, `"працює"` on `ES`).
+  - `src/worker.rs` & `src/profile.rs`:
+    - Relaxed keystroke-count gate from `3` to `2` while requiring `>= 3` rendered target alphabetic characters, unlocking 2-keystroke / 3–4-char Arabic `WCH_LGTR` ligature words (`بلا`, `لأن`, `إلا`, `ولا`).
+    - Fixed `is_bicameral` (`matches!(self.script, 1 | 2 | 3 | 7)`) so Arabic mid-word `Shift` hamza/madda (`مسألة`, `الآن`, `لأن`) is never penalized as camelCase while Greek (`7`) gets proper bicameral checks.
+    - Added vocalization stripping for `LANG_ARABIC` and `LANG_HEBREW`, replaced blind apostrophe/backtick stripping with `strip_valid_internal_apostrophe_or_hyphen` (preserving wrong-layout dead keys like `"qu'e"` and `"est'a"` as `OOV_IDX` in English), allowed internal apostrophes/hyphens in `is_pure_alphabetic_candidate` (`"c'est"`, `"peut-être"`, `"п'ять"`), allowed Czech syllabic `'r'`/`'l'` words (`"čtvrt"`, `"smrt"`) and 5–6-consonant clusters in `KA`/`CS`/`PL`/`DE` (`"გთხოვთ"`, `"čtvrtek"`), and guarded against candidate layouts that drop mid-word keys (`"GitHub"` on `US` vs `KA-QWERTY`).
+  - `tools/profilegen` & `assets/profiles/*.bin`:
+    - Expanded all 18 non-EN/RU training corpora in `tools/profilegen/src/corpora.rs` to ~350–450 words each, added Dutch trema/accented vowels (`áéèêëïóöü`) and Arabic `ةهءؤئ` vowel carriers in `tools/profilegen/src/main.rs`, and regenerated all 20 `assets/profiles/*.bin` files (`131,356` bytes total; 900–1380 trigrams per language).
+
 ## Verified
-- `cargo build --release`: 0 warnings, `target\x86_64-pc-windows-gnullvm\release\smartblink.exe` (`612,352` bytes, `SHA256 = 5866e2d5ce306855b5cc3a2ff4931b8d5c430dff1544a9f6921e564e378430f6`).
-- `cargo test --release`: `test result: ok. 46 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s`.
-- `ISCC.exe installer\SmartBlink.iss`: `Successful compile` -> `target\installer\SmartBlink-Setup-1.0.0.exe` (`2,327,059` bytes, `SHA256 = acfbb1a7d3230ad6d9e298951b2a9cd3be77b834004a65280e9573050d05ca76`).
-- `target\installer\SHA256SUMS.txt` updated for both `smartblink.exe` and `SmartBlink-Setup-1.0.0.exe`.
+- `cargo build --release`: 0 warnings (`target\x86_64-pc-windows-gnullvm\release\smartblink.exe`, `682,496` bytes).
+- `cargo test --release`: `48 passed; 0 failed` (including `m13_dead_keys_ligatures_sgcaps_and_unicameral_shift_suite` and `m13_twenty_language_and_45_kbd_variant_regression_suite`).
+- `ISCC.exe installer\SmartBlink.iss`: `target\installer\SmartBlink-Setup-1.0.0.exe` + `target\installer\SHA256SUMS.txt` updated.
 
 ## Next Immediate Task
-- Await owner's explicit approval/command if and when to push to a GitHub remote or publish a GitHub release (`AGENTS.md` Session Protocol #7).
+- Await owner live verification or explicit approval before pushing to GitHub (`git push`) / publishing v1.0.0 release.
 
 ## Blockers
 - None. (`iscc` for Inno Setup 6 needed only at M10.)

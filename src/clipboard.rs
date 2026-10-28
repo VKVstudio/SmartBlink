@@ -404,7 +404,7 @@ pub fn convert_selection_text(
                 // (e.g. mixed selection "Привет ghbdtn"), never when they belong to a 3rd layout like DE "größe".
                 let all_unmapped_in_dst = text.chars().all(|ch| {
                     !ch.is_alphabetic()
-                        || src.find_char_ext(ch).is_some()
+                        || src.can_produce_char(ch)
                         || ch
                             .to_lowercase()
                             .all(|lc| dst_profile.char_index(lc).is_some())

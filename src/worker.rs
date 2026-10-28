@@ -617,11 +617,15 @@ pub fn start(
                         && (rec.vk == VK_SPACE || rec.vk == VK_RETURN)
                     {
                         let active_word = layout::active_word_slice(word_buf.as_slice());
-                        if active_word.len() >= profile::MIN_WORD_LEN {
+                        if active_word.len() >= 2 {
                             let cur_hkl = layout::window_layout(focus.current_hwnd());
-                            if let Some(rendered) =
-                                layout_cache.get_or_build(cur_hkl).render_keys(active_word)
-                            {
+                            let (mut rendered, trailing_dead) = layout_cache
+                                .get_or_build(cur_hkl)
+                                .render_keys_raw(active_word, false);
+                            if let Some(d) = trailing_dead {
+                                rendered.push(d);
+                            }
+                            if !rendered.is_empty() {
                                 whitelist.record_ignored_word(&rendered, cur_hkl);
                             }
                         }
@@ -733,13 +737,16 @@ pub fn start(
                         last_verdict = None;
                         word_blinked = false;
                         word_alerted = false;
-                    } else if active_word.len() >= profile::MIN_WORD_LEN {
+                    } else if active_word.len() >= 2 {
                         let cur_hkl = layout::window_layout(focus.current_hwnd());
-                        let is_whitelisted = layout_cache
+                        let (mut cur_rendered, cur_dead) = layout_cache
                             .get_or_build(cur_hkl)
-                            .render_keys(active_word)
-                            .map(|w| whitelist.is_whitelisted(&w, cur_hkl))
-                            .unwrap_or(false);
+                            .render_keys_raw(active_word, false);
+                        if let Some(d) = cur_dead {
+                            cur_rendered.push(d);
+                        }
+                        let is_whitelisted =
+                            !cur_rendered.is_empty() && whitelist.is_whitelisted(&cur_rendered, cur_hkl);
                         if is_whitelisted {
                             last_verdict = None;
                         } else {

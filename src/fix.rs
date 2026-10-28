@@ -189,8 +189,8 @@ pub fn plan_word_fix(
             tables.iter().copied().find(|t| t.primary_lang == cur_lang)
         })?;
 
-    let original_text = current_table.render_keys(run)?;
-    if original_text.trim().is_empty() {
+    let (original_probe, probe_dead) = current_table.render_keys_raw(run, false);
+    if original_probe.trim().is_empty() && probe_dead.is_none() {
         return None;
     }
 
@@ -221,7 +221,7 @@ pub fn plan_word_fix(
             if table.hkl == current_table.hkl {
                 continue;
             }
-            let Some(rendered_word) = table.render_keys(word_only) else {
+            let Some(rendered_word) = table.render_keys_for_target(word_only) else {
                 continue;
             };
             let score = profile::profile_for_primary_lang(table.primary_lang)
@@ -235,7 +235,7 @@ pub fn plan_word_fix(
     };
 
     let run = expand_erroneous_burst_run(word_buf_slots, current_table, target_table);
-    let original_text = current_table.render_keys(run)?;
+    let (original_text, _) = current_table.render_keys_raw(run, false);
     let replacement_text =
         render_replacement_preserving_top_row_punct(run, current_table, target_table)?;
     if replacement_text.is_empty() || replacement_text == original_text {
@@ -278,10 +278,10 @@ fn render_replacement_preserving_top_row_punct(
             layout::ScanTranslation::DeadKey(_) => None,
             layout::ScanTranslation::None => None,
         };
-        match target_table.lookup(slot) {
+        match target_table.lookup_for_target(slot) {
             layout::ScanTranslation::Char(dst_ch) => {
                 if let Some(d) = pending_dead.take() {
-                    if let Some(combined) = layout::combine_dead_key(d, dst_ch) {
+                    if let Some(combined) = target_table.combine_dead(d, dst_ch) {
                         out.push(combined);
                     } else {
                         out.push(d);
@@ -356,10 +356,11 @@ fn has_earlier_wrong_layout_word(
             start -= 1;
         }
         let word = &slots[start..end];
-        if let (Some(cur_str), Some(dst_str)) = (
-            current_table.render_keys(word),
-            target_table.render_keys(word),
-        ) {
+        let (mut cur_str, cur_dead) = current_table.render_keys_raw(word, false);
+        if let Some(d) = cur_dead {
+            cur_str.push(d);
+        }
+        if let Some(dst_str) = target_table.render_keys_for_target(word) {
             let cur_s = cur_prof.map(|p| p.score_word(&cur_str)).unwrap_or(0);
             let dst_s = dst_prof.map(|p| p.score_word(&dst_str)).unwrap_or(0);
             if is_direct_wrong_layout_token(cur_s, dst_s) {
@@ -401,10 +402,11 @@ fn expand_erroneous_burst_run<'a>(
             word_start -= 1;
         }
         let prev_word_slots = &word_buf_slots[word_start..word_end];
-        let Some(cur_str) = current_table.render_keys(prev_word_slots) else {
-            break;
-        };
-        let Some(dst_str) = target_table.render_keys(prev_word_slots) else {
+        let (mut cur_str, cur_dead) = current_table.render_keys_raw(prev_word_slots, false);
+        if let Some(d) = cur_dead {
+            cur_str.push(d);
+        }
+        let Some(dst_str) = target_table.render_keys_for_target(prev_word_slots) else {
             break;
         };
 
@@ -896,5 +898,37 @@ mod tests {
             plan6.replacement_text,
             "how are you my friend? i think, what it work correctly?"
         );
+
+        // 7. Capitalized "Hello" typed on KA-QWERTY (Shift+H is None -> commits 4 chars "ელლო"):
+        const KA_HKL: HKL = HKL(0x04370437 as _);
+        let ka_qw = LayoutLayerTable::from_pairs(
+            KA_HKL,
+            &[
+                (0x23, 'ჰ', '\0'),
+                (0x12, 'ე', '\0'),
+                (0x26, 'ლ', '\0'),
+                (0x18, 'ო', '\0'),
+            ],
+        );
+        let hello_slots = type_str("Hello", FULL_US);
+        let plan_ka = plan_word_fix(&hello_slots, KA_HKL, &[&ka_qw, &us]).expect("plan_ka");
+        assert_eq!(plan_ka.backspace_count, 4); // 4 committed chars ("ელლო"), not 5!
+        assert_eq!(plan_ka.replacement_text, "Hello");
+
+        // 8. Russian "этих" typed on FR AZERTY (final key 0x1A is dead key '^' -> commits 3 chars "ùnb"):
+        const FR_HKL: HKL = HKL(0x040C040C as _);
+        let fr_azerty = LayoutLayerTable::from_pairs(
+            FR_HKL,
+            &[
+                (0x28, 'ù', '%'),
+                (0x31, 'n', 'N'),
+                (0x30, 'b', 'B'),
+            ],
+        )
+        .with_dead_key(0x1A, false, '^');
+        let etikh_slots = type_str("этих", FULL_RU);
+        let plan_fr = plan_word_fix(&etikh_slots, FR_HKL, &[&fr_azerty, &ru]).expect("plan_fr");
+        assert_eq!(plan_fr.backspace_count, 3); // 3 committed chars ("ùnb"), pending '^' not committed!
+        assert_eq!(plan_fr.replacement_text, "этих");
     }
 }
