@@ -403,6 +403,7 @@ All 12 milestones (M1–M12) are complete. Await owner desktop verification and 
 - `cargo test --release` -> `49 passed; 0 failed` (`0.84s`).
 - `cargo build --release` -> 0 warnings (`smartblink.exe`, `682,496` bytes).
 - `ISCC.exe installer\SmartBlink.iss` -> `target\installer\SmartBlink-Setup-1.0.0.exe` + `target\installer\SHA256SUMS.txt`.
+- Pushed `master` and annotated tag `v1.0.0` to `https://github.com/VKVstudio/SmartBlink.git` per owner approval.
 
 **Next agent**
-- Await owner live verification or explicit approval before `git push` / GitHub release.
+- `v1.0.0` is live on GitHub (`https://github.com/VKVstudio/SmartBlink`).

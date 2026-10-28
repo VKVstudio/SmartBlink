@@ -1,6 +1,6 @@
 # Checkpoint — SmartBlink
 
-`Current Phase`: M13 Complete — Deep 20-Language / 45-DLL (`KBD*.DLL`) Engine Overhaul implemented & verified (`48 passed; 0 failed`); ready for live manual check across non-EN/RU layouts or v1.0.0 release approval.
+`Current Phase`: Released (`v1.0.0`) — Pushed `master` + `v1.0.0` tag to `https://github.com/VKVstudio/SmartBlink`.
 `Approved Stack`: Rust (`x86_64-pc-windows-gnullvm` via LLVM-MinGW UCRT; MSVC/Windows SDK forbidden), `windows` crate 0.58, Win32 tray + Settings window, hand-rolled flat TOML config in `%APPDATA%\SmartBlink\config.toml`, WASAPI shared audio, Inno Setup 6 installer (per-user default `{autopf}`, optional elevated ONLOGON scheduled task). License MIT. Publisher `VKV Studio` / vkvstudio.com. Min OS: Windows 10 1809. Default fix hotkey: double Left Shift. Default alert mode: Both (audio + LED), LED defaults to Scroll Lock.
 
 ## Completed
@@ -73,7 +73,7 @@
 - `ISCC.exe installer\SmartBlink.iss`: `target\installer\SmartBlink-Setup-1.0.0.exe` + `target\installer\SHA256SUMS.txt` updated.
 
 ## Next Immediate Task
-- Await owner live verification or explicit approval before pushing to GitHub (`git push`) / publishing v1.0.0 release.
+- None — `v1.0.0` pushed to `https://github.com/VKVstudio/SmartBlink`. Monitor GitHub Actions release workflow if needed.
 
 ## Blockers
 - None. (`iscc` for Inno Setup 6 needed only at M10.)
