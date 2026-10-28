@@ -397,10 +397,10 @@ All 12 milestones (M1–M12) are complete. Await owner desktop verification and 
   - **Step 4 (`tools/profilegen/src/corpora.rs`, `tools/profilegen/src/main.rs`, `assets/profiles/*.bin`):**
     - Expanded all 18 non-EN/RU corpora (`UK, BE, KK, DE, FR, ES, PT, IT, TR, PL, NL, SV, CS, EL, HE, AR, HY, KA`) to ~350–450 high-frequency words each, added Dutch accented/trema vowels (`áéèêëïóöü`) and Arabic `ةهءؤئ` vowel carriers, and regenerated all 20 `assets/profiles/*.bin` files (`131,356` bytes total; 900–1380 trigrams per language).
   - **Step 5 (`src/layout.rs`, `src/profile.rs`, `src/fix.rs`):**
-    - Added `m13_dead_keys_ligatures_sgcaps_and_unicameral_shift_suite` (`src/layout.rs`), `m13_twenty_language_and_45_kbd_variant_regression_suite` (`src/profile.rs`), and `KA-QWERTY` / `FR` trailing-dead-key backspace-accounting tests (`src/fix.rs`).
+    - Added `m13_dead_keys_ligatures_sgcaps_and_unicameral_shift_suite` (`src/layout.rs`), `m13_twenty_language_and_45_kbd_variant_regression_suite` (`src/profile.rs`), `KA-QWERTY` / `FR` trailing-dead-key backspace-accounting tests (`src/fix.rs`), and `real_45_system_kbd_dll_matrix` (`src/layout.rs` + `src/profile.rs`), which loads all 45 official Windows 11 `C:\Windows\System32\KBD*.DLL` drivers directly via `KbdLayerDescriptor` (read-only, without changing host HKLs) and tests single-word detection, multi-word `plan_word_fix` burst replacement, and false-positive immunity across all 45 drivers (catching and fixing internal `'-'` stripping on `KBDGR.DLL` `"stra-e"`, `'['` stripping on `KBDSW.DLL` `"ocks["`, and `'&'` stripping on `kbdarme.dll` `"bar&"`).
 
 **Verified**
-- `cargo test --release` -> `48 passed; 0 failed` (`0.45s`).
+- `cargo test --release` -> `49 passed; 0 failed` (`0.84s`).
 - `cargo build --release` -> 0 warnings (`smartblink.exe`, `682,496` bytes).
 - `ISCC.exe installer\SmartBlink.iss` -> `target\installer\SmartBlink-Setup-1.0.0.exe` + `target\installer\SHA256SUMS.txt`.
 

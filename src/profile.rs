@@ -465,16 +465,20 @@ fn strip_valid_internal_apostrophe_or_hyphen(chars: &mut Vec<char>, primary_lang
     if len < 3 {
         return;
     }
-    // 1. Check for a single internal hyphen strictly between alphabetic characters (e.g. "peut-être", "кто-то"):
-    let hyphen_count = chars.iter().filter(|&&c| c == '-').count();
-    if hyphen_count == 1 {
-        if let Some(pos) = chars.iter().position(|&c| c == '-') {
-            if pos >= 1
-                && pos + 1 < chars.len()
-                && chars[pos - 1].is_alphabetic()
-                && chars[pos + 1].is_alphabetic()
-            {
-                chars.remove(pos);
+    // 1. Check for a single internal hyphen strictly between alphabetic characters on French AZERTY
+    // (where '-' is on top-row '6' = 0x07, e.g. "peut-être" typed as "peut6[tre" on US).
+    // Do NOT strip '-' in English/German/etc., where '-' (0x0C / 0x35) is 'ß', 'ğ', 'ş', '+' on partner layouts!
+    if primary_lang == LANG_FRENCH {
+        let hyphen_count = chars.iter().filter(|&&c| c == '-').count();
+        if hyphen_count == 1 {
+            if let Some(pos) = chars.iter().position(|&c| c == '-') {
+                if pos >= 1
+                    && pos + 1 < chars.len()
+                    && chars[pos - 1].is_alphabetic()
+                    && chars[pos + 1].is_alphabetic()
+                {
+                    chars.remove(pos);
+                }
             }
         }
     }
@@ -530,8 +534,7 @@ fn strip_valid_internal_apostrophe_or_hyphen(chars: &mut Vec<char>, primary_lang
 fn is_sentence_punct(ch: char) -> bool {
     matches!(
         ch,
-        '.' | ',' | '!' | '?' | ':' | ';' | '"' | '\'' | '(' | ')' | '[' | ']' | '«' | '»'
-            | '&' | '/' | '^' | '$' | '@' | '#' | '`' | '~'
+        '.' | ',' | '!' | '?' | ':' | ';' | '"' | '\'' | '(' | ')' | '«' | '»' | '؟' | '،' | '؛' | '՞' | '։'
     )
 }
 
@@ -1615,5 +1618,146 @@ mod tests {
             .expect("Czech syllabic-r word 'čtvrt' ('4tvrt' on US) must be detected");
         assert_eq!(v_ctvrt.target_hkl, CS_HKL);
         assert_eq!(v_ctvrt.rendered_target, "čtvrt");
+    }
+
+    #[test]
+    fn real_45_system_kbd_dll_matrix() {
+        use crate::fix::plan_word_fix;
+
+        let us = LayoutLayerTable::from_system_kbd_dll(HKL(0x04090409 as _), "kbdus.dll");
+        let ru = LayoutLayerTable::from_system_kbd_dll(HKL(0x04190419 as _), "kbdru.dll");
+
+        // All 45 official Windows 11 KBD*.DLL layout drivers across the 20 languages:
+        // (dll_name, hkl_u32, lang_label, sample_word_in_target_lang, sample_multiword_burst)
+        let matrix: &[(&str, u32, &str, &str, &str)] = &[
+            // 1. English (3 DLLs: tested against RU JCUKEN)
+            ("KBDUS.DLL", 0x04090409, "EN-US", "question", "hello my friend"),
+            ("KBDUK.DLL", 0x08090809, "EN-UK", "question", "hello my friend"),
+            ("KBDUSX.DLL", 0x04090409, "EN-US-Intl", "question", "hello my friend"),
+            // 2. Russian (2 DLLs)
+            ("KBDRU.DLL", 0x04190419, "RU-JCUKEN", "привет", "привет как дела"),
+            ("KBDRU1.DLL", 0x04190419, "RU-Typewriter", "привет", "привет как дела"),
+            // 3. Ukrainian (2 DLLs)
+            ("KBDUR.DLL", 0x04220422, "UK-101", "питання", "привіт як справи"),
+            ("KBDUR1.DLL", 0x04220422, "UK-Enhanced", "ґрунт", "привіт як справи"),
+            // 4. Belarusian (1 DLL)
+            ("KBDBLR.DLL", 0x04230423, "BE-Belarusian", "прывітанне", "прывітанне сябар"),
+            // 5. Kazakh (1 DLL)
+            ("KBDKAZ.DLL", 0x043F043F, "KK-Kazakh", "сәлем", "сәлем достар"),
+            // 6. German (2 DLLs: Swiss German KBDSG.DLL does not have 'ß', uses 'ss' / umlauts)
+            ("KBDGR.DLL", 0x04070407, "DE-QWERTZ", "straße", "für das große"),
+            ("KBDSG.DLL", 0x08070807, "DE-Swiss", "zurück", "für das schöne"),
+            // 7. French (4 DLLs)
+            ("KBDFR.DLL", 0x040C040C, "FR-Legacy", "déjà", "c'est déjà très"),
+            ("KBDFRNA.DLL", 0x040C040C, "FR-Std-AZERTY", "déjà", "c'est déjà très"),
+            ("KBDBE.DLL", 0x080C080C, "FR-Belgian", "déjà", "c'est déjà très"),
+            ("KBDSF.DLL", 0x100C100C, "FR-Swiss", "déjà", "très bien merci"),
+            // 8. Spanish (2 DLLs)
+            ("KBDSP.DLL", 0x040A040A, "ES-Spain", "también", "está muy bien"),
+            ("KBDLA.DLL", 0x080A080A, "ES-LatAm", "también", "está muy bien"),
+            // 9. Portuguese (2 DLLs)
+            ("KBDPO.DLL", 0x08160816, "PT-Portugal", "não", "não está aqui"),
+            ("KBDBR.DLL", 0x04160416, "PT-Brazil-ABNT2", "coração", "não está aqui"),
+            // 10. Italian (2 DLLs)
+            ("KBDIT.DLL", 0x04100410, "IT-Italy", "perché", "perché è così"),
+            ("KBDIT142.DLL", 0x04100410, "IT-142", "perché", "perché è così"),
+            // 11. Turkish (2 DLLs)
+            ("KBDTUQ.DLL", 0x041F041F, "TR-Q", "günaydın", "çok güzel bir"),
+            ("KBDTUF.DLL", 0x041F041F, "TR-F", "merhaba", "çok güzel bir"),
+            // 12. Polish (2 DLLs)
+            ("KBDPL1.DLL", 0x04150415, "PL-Programmers", "będzie", "wszystko będzie dobrze"),
+            ("KBDPL.DLL", 0x04150415, "PL-214-QWERTZ", "będzie", "wszystko będzie dobrze"),
+            // 13. Dutch (1 DLL)
+            ("KBDNE.DLL", 0x04130413, "NL-Dutch", "financiële", "voor België"),
+            // 14. Swedish (1 DLL)
+            ("KBDSW.DLL", 0x041D041D, "SV-Swedish", "också", "det är också bra"),
+            // 15. Czech (2 DLLs)
+            ("KBDCZ.DLL", 0x04050405, "CS-QWERTZ", "čeština", "čtvrt hodiny"),
+            ("KBDCZ1.DLL", 0x04050405, "CS-QWERTY", "čeština", "čtvrt hodiny"),
+            // 16. Greek (2 DLLs)
+            ("KBDHE.DLL", 0x04080408, "EL-Greek", "καλημέρα", "καλημέρα σας"),
+            ("KBDHEPT.DLL", 0x04080408, "EL-Polytonic", "καλημέρα", "καλημέρα σας"),
+            // 17. Hebrew (3 DLLs)
+            ("KBDHEB.DLL", 0x040D040D, "HE-Legacy", "שלום", "שלום לכם היום"),
+            ("kbdhebl3.dll", 0x040D040D, "HE-Standard", "שלום", "שלום לכם היום"),
+            ("kbdhebsi.dll", 0x040D040D, "HE-SI-2018", "שלום", "שלום לכם היום"),
+            // 18. Arabic (3 DLLs)
+            ("KBDA1.DLL", 0x04010401, "AR-101", "بلا", "السلام عليكم"),
+            ("KBDA2.DLL", 0x04010401, "AR-102", "هذا", "هذا الكتاب"),
+            ("KBDA3.DLL", 0x04010401, "AR-102-AZERTY", "مسألة", "السلام عليكم"),
+            // 19. Armenian (4 DLLs)
+            ("kbdarme.dll", 0x042B042B, "HY-Eastern", "բարև", "բարև ձեզ"),
+            ("kbdarmw.dll", 0x042B042B, "HY-Western", "բարև", "բարև ձեզ"),
+            ("kbdarmph.dll", 0x042B042B, "HY-Phonetic", "բարև", "բարև ձեզ"),
+            ("kbdarmty.dll", 0x042B042B, "HY-Typewriter", "բարև", "բարև ձեզ"),
+            // 20. Georgian (4 DLLs)
+            ("kbdgeo.dll", 0x04370437, "KA-Legacy", "გამარჯობა", "გამარჯობა მეგობარო"),
+            ("kbdgeoqw.dll", 0x04370437, "KA-QWERTY", "გთხოვთ", "გამარჯობა მეგობარო"),
+            ("kbdgeoer.dll", 0x04370437, "KA-Ergonomic", "გამარჯობა", "გამარჯობა მეგობარო"),
+            ("kbdgeome.dll", 0x04370437, "KA-MES", "ძალიან", "ძალიან კარგი"),
+        ];
+
+        println!(
+            "\n{:<15} | {:<16} | {:<20} | {:<22} | {:<22}",
+            "DLL", "Layout", "Wrong-Layout Output", "Detected Word", "Multi-Word Burst Fix"
+        );
+        println!("{}", "-".repeat(105));
+
+        for &(dll, hkl_u32, label, word, burst) in matrix {
+            let target_table = LayoutLayerTable::from_system_kbd_dll(HKL(hkl_u32 as _), dll);
+            let wrong_table = if (hkl_u32 & 0x3FF) == LANG_ENGLISH as u32 {
+                &ru
+            } else {
+                &us
+            };
+
+            // 1. Single-word detection test:
+            let word_slots = target_table.simulate_typing(word);
+            let (wrong_committed, wrong_dead) = wrong_table.render_keys_raw(&word_slots, false);
+            let mut wrong_display = wrong_committed.clone();
+            if let Some(d) = wrong_dead {
+                wrong_display.push(d);
+            }
+
+            let eval = evaluate_tables(&word_slots, wrong_table.hkl, &[wrong_table, &target_table])
+                .unwrap_or_else(|| {
+                    panic!(
+                        "[FAIL] {dll} ({label}): typing {word:?} on wrong layout produced {wrong_display:?} and was NOT detected!"
+                    )
+                });
+            assert_eq!(
+                eval.target_hkl, target_table.hkl,
+                "[FAIL] {dll} ({label}): wrong target HKL"
+            );
+            assert_eq!(
+                eval.rendered_target.to_lowercase(),
+                word.to_lowercase(),
+                "[FAIL] {dll} ({label}): rendered target mismatch"
+            );
+
+            // 2. Multi-word burst fix test (`plan_word_fix`):
+            let burst_slots = target_table.simulate_typing(burst);
+            let plan = plan_word_fix(&burst_slots, wrong_table.hkl, &[wrong_table, &target_table])
+                .unwrap_or_else(|| {
+                    panic!("[FAIL] {dll} ({label}): plan_word_fix returned None for burst {burst:?}")
+                });
+            assert_eq!(
+                plan.replacement_text.to_lowercase(),
+                burst.to_lowercase(),
+                "[FAIL] {dll} ({label}): burst replacement mismatch"
+            );
+
+            // 3. False-positive immunity test (typing native word when target_table IS active must stay None):
+            assert!(
+                evaluate_tables(&word_slots, target_table.hkl, &[&target_table, wrong_table])
+                    .is_none(),
+                "[FAIL] {dll} ({label}): false positive when typing native word {word:?} on correct layout!"
+            );
+
+            println!(
+                "{:<15} | {:<16} | {:<20} | {:<22} | {:<22}",
+                dll, label, wrong_display, eval.rendered_target, plan.replacement_text
+            );
+        }
     }
 }

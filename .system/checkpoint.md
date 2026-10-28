@@ -69,7 +69,7 @@
 
 ## Verified
 - `cargo build --release`: 0 warnings (`target\x86_64-pc-windows-gnullvm\release\smartblink.exe`, `682,496` bytes).
-- `cargo test --release`: `48 passed; 0 failed` (including `m13_dead_keys_ligatures_sgcaps_and_unicameral_shift_suite` and `m13_twenty_language_and_45_kbd_variant_regression_suite`).
+- `cargo test --release`: `49 passed; 0 failed` (including `real_45_system_kbd_dll_matrix` which loads all 45 real `C:\Windows\System32\KBD*.DLL` system binaries via `KbdLayerDescriptor` and verifies single-word detection, multi-word `plan_word_fix` replacement, and zero false positives across all 45 Windows 11 keyboard drivers).
 - `ISCC.exe installer\SmartBlink.iss`: `target\installer\SmartBlink-Setup-1.0.0.exe` + `target\installer\SHA256SUMS.txt` updated.
 
 ## Next Immediate Task

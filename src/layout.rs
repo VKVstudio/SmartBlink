@@ -497,6 +497,294 @@ impl LayoutLayerTable {
         self
     }
 
+    /// Load a complete 256-scancode `LayoutLayerTable` (`base`, `shift`, `altgr`, `shift_altgr`,
+    /// dead keys, and 2-char ligatures) directly from a system `C:\Windows\System32\KBD*.DLL` binary
+    /// in read-only mode without modifying the user's Windows taskbar or installed HKLs.
+    #[cfg(test)]
+    pub fn from_system_kbd_dll(hkl: HKL, dll_name: &str) -> Self {
+        use std::collections::HashMap;
+        use windows::core::{s, PCWSTR};
+        use windows::Win32::Foundation::FreeLibrary;
+        use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+
+        const WCH_NONE: u16 = 0xF000;
+        const WCH_DEAD: u16 = 0xF001;
+        const WCH_LGTR: u16 = 0xF002;
+        const SGCAPS: u8 = 0x02;
+
+        let path = format!(r"C:\Windows\System32\{dll_name}");
+        let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+        unsafe {
+            let hmod = LoadLibraryW(PCWSTR(wide.as_ptr()))
+                .unwrap_or_else(|e| panic!("LoadLibraryW failed for {path}: {e}"));
+            let proc = GetProcAddress(hmod, s!("KbdLayerDescriptor"))
+                .unwrap_or_else(|| panic!("No KbdLayerDescriptor in {path}"));
+            let desc_fn: unsafe extern "system" fn() -> *const u8 = std::mem::transmute(proc);
+            let kt = desc_fn();
+            assert!(!kt.is_null(), "KbdLayerDescriptor returned null for {path}");
+
+            let p_char_modifiers = *(kt.add(0x00) as *const *const u8);
+            let p_vk_to_wchar_table = *(kt.add(0x08) as *const *const u8);
+            let pus_vsc_to_vk = *(kt.add(0x30) as *const *const u16);
+            let b_max_vsc_to_vk = *kt.add(0x38) as usize;
+            let n_lg_max = *kt.add(0x54) as usize;
+            let cb_lg_entry = *kt.add(0x55) as usize;
+            let p_ligature = *(kt.add(0x58) as *const *const u8);
+
+            let p_vk_to_bit = *(p_char_modifiers as *const *const u8);
+            let w_max_mod_bits = *(p_char_modifiers.add(0x08) as *const u16) as usize;
+            let mut vk_to_bit = HashMap::new();
+            let mut cur_vb = p_vk_to_bit;
+            while !cur_vb.is_null() {
+                let vk = *cur_vb;
+                let bits = *cur_vb.add(1);
+                if vk == 0 && bits == 0 {
+                    break;
+                }
+                vk_to_bit.insert(vk, bits as usize);
+                cur_vb = cur_vb.add(2);
+            }
+            let bit_shift = vk_to_bit.get(&0x10).copied().unwrap_or(1);
+            let bit_ctrl = vk_to_bit.get(&0x11).copied().unwrap_or(2);
+            let bit_alt = vk_to_bit.get(&0x12).copied().unwrap_or(4);
+            let mod_col = |mask: usize| -> Option<usize> {
+                if mask <= w_max_mod_bits {
+                    let mn = *p_char_modifiers.add(0x0A + mask);
+                    if mn != 0x0F {
+                        return Some(mn as usize);
+                    }
+                }
+                None
+            };
+            let col_base = mod_col(0);
+            let col_shift = mod_col(bit_shift);
+            let col_altgr = mod_col(bit_ctrl | bit_alt);
+            let col_shift_altgr = mod_col(bit_shift | bit_ctrl | bit_alt);
+
+            let mut ligatures: HashMap<(u8, u16), Vec<char>> = HashMap::new();
+            if !p_ligature.is_null() && n_lg_max > 0 && cb_lg_entry > 0 {
+                let mut cur_lg = p_ligature;
+                for _ in 0..128 {
+                    let vk = *cur_lg;
+                    if vk == 0 {
+                        break;
+                    }
+                    let mod_num = *(cur_lg.add(2) as *const u16);
+                    let mut chars = Vec::new();
+                    for idx in 0..n_lg_max {
+                        let wc = *(cur_lg.add(4 + idx * 2) as *const u16);
+                        if wc == WCH_NONE || wc == 0 {
+                            break;
+                        }
+                        if let Some(c) = char::from_u32(wc as u32) {
+                            chars.push(c);
+                        }
+                    }
+                    ligatures.insert((vk, mod_num), chars);
+                    cur_lg = cur_lg.add(cb_lg_entry);
+                }
+            }
+
+            let mut vk_map: HashMap<u8, (Vec<u16>, Option<Vec<u16>>)> = HashMap::new();
+            let mut cur_tab = p_vk_to_wchar_table;
+            while !cur_tab.is_null() {
+                let p_vk_to_wchars = *(cur_tab as *const *const u8);
+                let n_mods = *cur_tab.add(0x08) as usize;
+                let cb_size = *cur_tab.add(0x09) as usize;
+                if p_vk_to_wchars.is_null() || cb_size == 0 {
+                    break;
+                }
+                let mut entry = p_vk_to_wchars;
+                let mut last_real_vk: Option<u8> = None;
+                let mut expect_sgcaps_for: Option<u8> = None;
+                for _ in 0..256 {
+                    let vk = *entry;
+                    if vk == 0 {
+                        break;
+                    }
+                    let attr = *entry.add(1);
+                    let mut states = Vec::with_capacity(n_mods);
+                    for m in 0..n_mods {
+                        states.push(*(entry.add(2 + m * 2) as *const u16));
+                    }
+                    if vk == 0xFF {
+                        if let Some(prev_vk) = last_real_vk {
+                            if let Some(item) = vk_map.get_mut(&prev_vk) {
+                                item.1 = Some(states);
+                            }
+                        }
+                    } else if expect_sgcaps_for == Some(vk) {
+                        expect_sgcaps_for = None;
+                    } else {
+                        last_real_vk = Some(vk);
+                        vk_map.insert(vk, (states, None));
+                        if (attr & SGCAPS) != 0 {
+                            expect_sgcaps_for = Some(vk);
+                        }
+                    }
+                    entry = entry.add(cb_size);
+                }
+                cur_tab = cur_tab.add(16);
+            }
+
+            let decode_cell = |vk: u8, col: Option<usize>| -> ScanTranslation {
+                let col_idx = match col {
+                    Some(c) => c,
+                    None => return ScanTranslation::None,
+                };
+                let (states, dead_opt) = match vk_map.get(&vk) {
+                    Some(v) => v,
+                    None => return ScanTranslation::None,
+                };
+                if col_idx >= states.len() {
+                    return ScanTranslation::None;
+                }
+                let wc = states[col_idx];
+                if wc == WCH_NONE || wc == 0 {
+                    ScanTranslation::None
+                } else if wc == WCH_DEAD {
+                    if let Some(dead_vec) = dead_opt {
+                        if let Some(&dc) = dead_vec.get(col_idx) {
+                            if let Some(c) = char::from_u32(dc as u32) {
+                                return ScanTranslation::DeadKey(c);
+                            }
+                        }
+                    }
+                    ScanTranslation::None
+                } else if wc == WCH_LGTR {
+                    if let Some(chars) = ligatures.get(&(vk, col_idx as u16)) {
+                        if chars.len() >= 2 {
+                            return ScanTranslation::Chars(chars[0], chars[1]);
+                        } else if chars.len() == 1 {
+                            return ScanTranslation::Char(chars[0]);
+                        }
+                    }
+                    ScanTranslation::None
+                } else if wc >= 0x20 {
+                    char::from_u32(wc as u32)
+                        .map(ScanTranslation::Char)
+                        .unwrap_or(ScanTranslation::None)
+                } else {
+                    ScanTranslation::None
+                }
+            };
+
+            let mut base = [ScanTranslation::None; 256];
+            let mut shift = [ScanTranslation::None; 256];
+            let mut altgr = [ScanTranslation::None; 256];
+            let mut shift_altgr = [ScanTranslation::None; 256];
+
+            if !pus_vsc_to_vk.is_null() {
+                for sc in 0x01..b_max_vsc_to_vk.min(0x60) {
+                    let vk_raw = *pus_vsc_to_vk.add(sc);
+                    let vk = (vk_raw & 0xFF) as u8;
+                    if vk == 0 || vk == 0xFF {
+                        continue;
+                    }
+                    base[sc] = decode_cell(vk, col_base);
+                    shift[sc] = decode_cell(vk, col_shift);
+                    altgr[sc] = decode_cell(vk, col_altgr);
+                    shift_altgr[sc] = decode_cell(vk, col_shift_altgr);
+                }
+            }
+
+            let _ = FreeLibrary(hmod);
+
+            Self {
+                hkl,
+                lang_id: hkl_lang_id(hkl),
+                primary_lang: hkl_primary_lang(hkl),
+                base,
+                shift,
+                altgr,
+                shift_altgr,
+            }
+        }
+    }
+
+    /// Simulate a human typing `text` on this layout (supporting spaces, 2-char ligatures,
+    /// `AltGr`, `SGCAPS`, and 2-key dead-key compositions).
+    #[cfg(test)]
+    pub fn simulate_typing(&self, text: &str) -> Vec<KeyStrokeSlot> {
+        let chars: Vec<char> = text.chars().collect();
+        let mut slots = Vec::with_capacity(chars.len() + 4);
+        let mut i = 0;
+        let mut tick = 100u32;
+        while i < chars.len() {
+            let ch = chars[i];
+            if ch == ' ' {
+                slots.push(KeyStrokeSlot {
+                    vk: VK_SPACE,
+                    scan_code: 0x39,
+                    flags: 0,
+                    ms_tick: tick,
+                    shift: false,
+                    altgr: false,
+                });
+                tick += 25;
+                i += 1;
+                continue;
+            }
+            if i + 1 < chars.len() {
+                if let Some((sc, shift, altgr)) = self.find_ligature(ch, chars[i + 1]) {
+                    slots.push(KeyStrokeSlot {
+                        vk: 0x41,
+                        scan_code: sc as u16,
+                        flags: 0,
+                        ms_tick: tick,
+                        shift,
+                        altgr,
+                    });
+                    tick += 25;
+                    i += 2;
+                    continue;
+                }
+            }
+            if let Some((sc, shift, altgr)) = self.find_char_ext(ch) {
+                slots.push(KeyStrokeSlot {
+                    vk: 0x41,
+                    scan_code: sc as u16,
+                    flags: 0,
+                    ms_tick: tick,
+                    shift,
+                    altgr,
+                });
+                tick += 25;
+                i += 1;
+                continue;
+            }
+            if let Some(((d_sc, d_shift, d_altgr), (b_sc, b_shift, b_altgr))) =
+                self.find_dead_key_sequence(ch)
+            {
+                slots.push(KeyStrokeSlot {
+                    vk: 0x41,
+                    scan_code: d_sc as u16,
+                    flags: 0,
+                    ms_tick: tick,
+                    shift: d_shift,
+                    altgr: d_altgr,
+                });
+                tick += 20;
+                slots.push(KeyStrokeSlot {
+                    vk: 0x41,
+                    scan_code: b_sc as u16,
+                    flags: 0,
+                    ms_tick: tick,
+                    shift: b_shift,
+                    altgr: b_altgr,
+                });
+                tick += 25;
+                i += 1;
+                continue;
+            }
+            panic!(
+                "Cannot type char {:?} (U+{:04X}) on layout HKL {:?} in text {:?}",
+                ch, ch as u32, self.hkl, text
+            );
+        }
+        slots
+    }
+
     /// Language-aware dead-key composition for this layout.
     #[inline]
     pub fn combine_dead(&self, dead: char, base: char) -> Option<char> {
