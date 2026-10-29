@@ -124,3 +124,13 @@ By Windows User Interface Privilege Isolation (UIPI), a normal user-level app ca
 ## License
 
 MIT License. Copyright (c) 2026 [VKV Studio](https://vkvstudio.com). See [`LICENSE`](LICENSE) for full text.
+
+---
+
+<div align="center">
+  <a href="https://github.com/VKVstudio/.github/blob/main/DONATE.md">
+    <img src="https://raw.githubusercontent.com/VKVstudio/.github/main/assets/support-button.svg" alt="Support the work" height="40" />
+  </a>
+  <br>
+  <sub>If this project saved you time, consider supporting its development.</sub>
+</div>
