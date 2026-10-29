@@ -41,7 +41,8 @@ jobs:
         run: |
           $tag = "${env:GITHUB_REF_NAME}"
           $ver = $tag.TrimStart('v')
-          iscc "/DMyAppVersion=$ver" "installer\SmartBlink.iss"
+          $iscc = if (Get-Command iscc -ErrorAction SilentlyContinue) { "iscc" } else { "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" }
+          & $iscc "/DMyAppVersion=$ver" "installer\SmartBlink.iss"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item "target\release\smartblink.exe" "dist\smartblink.exe"
           Copy-Item "target\installer\SmartBlink-Setup-$ver.exe" "dist\SmartBlink-Setup-$ver.exe"
