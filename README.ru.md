@@ -124,3 +124,13 @@ cargo test --release
 ## Лицензия
 
 MIT License. Copyright (c) 2026 [VKV Studio](https://vkvstudio.com). Полный текст в файле [`LICENSE`](LICENSE).
+
+---
+
+<div align="center">
+  <a href="https://github.com/VKVstudio/.github/blob/main/DONATE.md">
+    <img src="https://raw.githubusercontent.com/VKVstudio/.github/main/assets/support-button.svg" alt="Support the work" height="40" />
+  </a>
+  <br>
+  <sub>Если проект сэкономил тебе время и нервы, можно поддержать его разработку.</sub>
+</div>
